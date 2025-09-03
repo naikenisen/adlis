@@ -1,2 +1,4 @@
-**/object_detection_dataset/
-BDD/
+#ignore the folders : object_detection_dataset, classification_dataset, general_dataset
+object_detection_dataset/
+classification_dataset/
+general_dataset/
