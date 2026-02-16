@@ -14,10 +14,10 @@ from sklearn.metrics import f1_score, accuracy_score, roc_curve, auc, confusion_
 from sklearn.preprocessing import label_binarize
 
 # Paths
-MODEL_PATH = "/home/naiken/coding/.adlis/Streamlit_app/classifier_model.pth"
-TRAINSET_PATH = "/home/naiken/coding/.adlis/classification_dataset/train"
-VALIDSET_PATH = "/home/naiken/coding/.adlis/classification_dataset/valid"
-TESTSET_PATH = "/home/naiken/coding/.adlis/classification_dataset/test"
+MODEL_PATH = "/home/naiken/coding/adlis/Classification_resnet18/best_model_f1.pth"
+TRAINSET_PATH = "/home/naiken/coding/adlis/classification_dataset_v2/train"
+VALIDSET_PATH = "/home/naiken/coding/adlis/classification_dataset_v2/valid"
+TESTSET_PATH = "/home/naiken/coding/adlis/classification_dataset_v2/test"
 
 # Device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
