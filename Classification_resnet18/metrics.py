@@ -12,8 +12,8 @@ from sklearn.metrics import confusion_matrix, f1_score, accuracy_score
 import seaborn as sns
 
 # Paths
-MODEL_PATH = "/home/naiken/coding/ADLIS/Streamlit_app/classifier_model.pth"
-TESTSET_PATH = "Classification_resnet50/classification_dataset/test"
+MODEL_PATH = "/home/naiken/coding/.adlis/Streamlit_app/classifier_model.pth"
+TESTSET_PATH = "/home/naiken/coding/.adlis/classification_dataset/test"
 
 # Device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
