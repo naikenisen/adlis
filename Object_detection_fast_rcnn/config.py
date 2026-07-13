@@ -8,10 +8,12 @@ NUM_WORKERS = 4
 
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-TRAIN_DIR = '/home/gcp-datathon/Documents/ADLIS/DATASET/train/images'
-TRAIN_ANNOT_DIR = '/home/gcp-datathon/Documents/ADLIS/DATASET/train/annotations'
-VALID_DIR = '/home/gcp-datathon/Documents/ADLIS/DATASET/test/images'
-VALID_ANNOT_DIR = '/home/gcp-datathon/Documents/ADLIS/DATASET/test/annotations'
+TRAIN_DIR = 'dataset/train/images'
+TRAIN_ANNOT_DIR = 'dataset/train/annotations'
+VALID_DIR = 'dataset/valid/images'
+VALID_ANNOT_DIR = 'dataset/valid/annotations'
+TEST_DIR = 'dataset/test/images'
+TEST_ANNOT_DIR = 'dataset/test/annotations'
 
 # Une seule classe "Cellule" + background
 CLASSES = [
