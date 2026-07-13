@@ -44,8 +44,8 @@ valid_transforms = v2.Compose([
 ])
 
 # Load the datasets
-train_dataset = datasets.ImageFolder(root='classification_dataset_v2/train', transform=train_transforms)
-valid_dataset = datasets.ImageFolder(root='classification_dataset_v2/valid', transform=valid_transforms)
+train_dataset = datasets.ImageFolder(root='dataset/classification_set/train', transform=train_transforms)
+valid_dataset = datasets.ImageFolder(root='dataset/classification_set/valid', transform=valid_transforms)
 
 # Data loaders
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
