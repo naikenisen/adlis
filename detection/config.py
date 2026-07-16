@@ -8,12 +8,9 @@ NUM_WORKERS = 4
 
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-TRAIN_DIR = 'dataset/train/images'
-TRAIN_ANNOT_DIR = 'dataset/train/annotations'
-VALID_DIR = 'dataset/valid/images'
-VALID_ANNOT_DIR = 'dataset/valid/annotations'
-TEST_DIR = 'dataset/test/images'
-TEST_ANNOT_DIR = 'dataset/test/annotations'
+IMAGES_DIR = 'dataset/images'
+ANNOT_DIR = 'dataset/annotations'
+SPLIT_CSV = 'dataset/split.csv'
 
 # Une seule classe "Cellule" + background
 CLASSES = [

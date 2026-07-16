@@ -5,12 +5,13 @@ import os
 import glob
 
 from xml.etree import ElementTree as et
-from config import (CLASSES, RESIZE_TOw, RESIZE_TOh, BATCH_SIZE, TRAIN_ANNOT_DIR, VALID_ANNOT_DIR)
+import csv
+from config import (CLASSES, RESIZE_TOw, RESIZE_TOh, BATCH_SIZE, IMAGES_DIR, ANNOT_DIR, SPLIT_CSV)
 from torch.utils.data import Dataset, DataLoader
 from custom_utils import collate_fn, get_train_transform, get_valid_transform
 
 class CustomDataset(Dataset):
-    def __init__(self, dir_path, annot_path, width, height, classes, transforms=None):
+    def __init__(self, dir_path, annot_path, width, height, classes, split='train', split_csv='dataset/split.csv', transforms=None):
         self.transforms = transforms
         self.dir_path = dir_path
         self.annot_path = annot_path
@@ -18,13 +19,12 @@ class CustomDataset(Dataset):
         self.width = width
         self.classes = classes  # ['__background__', 'Cellule']
         
-        self.image_file_types = ['*.jpg', '*.jpeg', '*.png', '*.ppm', '*.JPG']
-        self.all_image_paths = []
-        
-        # Récupérer toutes les images du dossier.
-        for file_type in self.image_file_types:
-            self.all_image_paths.extend(glob.glob(os.path.join(self.dir_path, file_type)))
-        self.all_images = [os.path.basename(p) for p in self.all_image_paths]
+        self.all_images = []
+        with open(split_csv, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row['split'] == split:
+                    self.all_images.append(row['filename'])
         self.all_images = sorted(self.all_images)
 
     def __getitem__(self, idx):
@@ -125,12 +125,12 @@ class CustomDataset(Dataset):
 # Création dataset + dataloader
 def create_train_dataset(DIR):
     return CustomDataset(
-        DIR, TRAIN_ANNOT_DIR, RESIZE_TOw, RESIZE_TOh, CLASSES, get_train_transform()
+        DIR, ANNOT_DIR, RESIZE_TOw, RESIZE_TOh, CLASSES, split='train', split_csv=SPLIT_CSV, transforms=get_train_transform()
     )
 
 def create_valid_dataset(DIR):
     return CustomDataset(
-        DIR, VALID_ANNOT_DIR, RESIZE_TOw, RESIZE_TOh, CLASSES, get_valid_transform()
+        DIR, ANNOT_DIR, RESIZE_TOw, RESIZE_TOh, CLASSES, split='valid', split_csv=SPLIT_CSV, transforms=get_valid_transform()
     )
 
 def create_train_loader(train_dataset, num_workers=0):

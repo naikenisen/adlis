@@ -1,6 +1,6 @@
 from config import (
     DEVICE, NUM_CLASSES, NUM_EPOCHS, OUT_DIR,
-    NUM_WORKERS, VALID_DIR, TRAIN_DIR
+    NUM_WORKERS, IMAGES_DIR
 )
 from model import create_model
 from custom_utils import (
@@ -53,8 +53,8 @@ if __name__ == '__main__':
     os.makedirs(OUT_DIR, exist_ok=True)
     
     # 1) Création Dataset + DataLoader
-    train_dataset = create_train_dataset(TRAIN_DIR)
-    valid_dataset = create_valid_dataset(VALID_DIR)
+    train_dataset = create_train_dataset(IMAGES_DIR)
+    valid_dataset = create_valid_dataset(IMAGES_DIR)
     train_loader = create_train_loader(train_dataset, NUM_WORKERS)
     valid_loader = create_valid_loader(valid_dataset, NUM_WORKERS)
     
