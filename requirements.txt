@@ -2,6 +2,7 @@ torch
 torchvision
 tqdm
 matplotlib
-numpy
+numpy<2.0
+pandas<2.0
 scikit-learn
 seaborn
