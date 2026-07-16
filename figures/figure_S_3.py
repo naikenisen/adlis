@@ -7,16 +7,10 @@ single matplotlib figure with:
 - IoU CDF curves (for matched true positives)
 
 Expected dataset layout:
-object_detection_dataset/dataset_split/
-  train/
-    images/
-    annotations/
-  valid/
-    images/
-    annotations/
-  test/
-    images/
-    annotations/
+dataset/
+  images/
+  annotations/
+  split.csv
 """
 
 import argparse
@@ -26,6 +20,7 @@ import importlib.util
 import os
 import sys
 import xml.etree.ElementTree as ET
+import csv
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -245,11 +240,9 @@ def load_model(model_path, device, num_classes=2):
     return model
 
 
-def evaluate_split(model, split_dir, device, iou_threshold=0.5, min_score=0.001, split_name="test"):
-    images_dir = os.path.join(split_dir, "images")
-    annot_dir = os.path.join(split_dir, "annotations")
-
-    image_paths = list_images(images_dir)
+def evaluate_split(model, images_dir, annot_dir, image_filenames, device, iou_threshold=0.5, min_score=0.001, split_name="test"):
+    image_paths = [os.path.join(images_dir, fname) for fname in image_filenames if os.path.exists(os.path.join(images_dir, fname))]
+    
     if not image_paths:
         return {
             "ap": 0.0,
@@ -446,9 +439,19 @@ def make_figure(results_by_split, split_order, output_path, iou_threshold):
 def main():
     parser = argparse.ArgumentParser(description="Evaluate detector and plot mAP/PR/IoU.")
     parser.add_argument(
-        "--dataset-root",
-        default="object_detection_dataset/dataset_split",
-        help="Root directory containing eval/valid and test folders.",
+        "--images-dir",
+        default="dataset/images",
+        help="Directory containing images.",
+    )
+    parser.add_argument(
+        "--annot-dir",
+        default="dataset/annotations",
+        help="Directory containing annotations.",
+    )
+    parser.add_argument(
+        "--split-csv",
+        default="dataset/split.csv",
+        help="CSV file mapping images to splits.",
     )
     parser.add_argument(
         "--model-path",
@@ -488,34 +491,35 @@ def main():
     if not requested_splits:
         raise ValueError("No split provided. Use --splits eval,test")
 
-    split_dirs = {}
+    split_mapping = {}
     for split in requested_splits:
         if split == "eval":
-            # In this project, eval data is stored as 'valid'.
-            preferred = os.path.join(args.dataset_root, "eval")
-            fallback = os.path.join(args.dataset_root, "valid")
-            split_dir = preferred if os.path.isdir(preferred) else fallback
+            split_mapping["valid"] = split
         else:
-            split_dir = os.path.join(args.dataset_root, split)
-
-        images_dir = os.path.join(split_dir, "images")
-        annotations_dir = os.path.join(split_dir, "annotations")
-        if not os.path.isdir(images_dir):
-            raise FileNotFoundError(f"Missing images directory for {split}: {images_dir}")
-        if not os.path.isdir(annotations_dir):
-            raise FileNotFoundError(f"Missing annotations directory for {split}: {annotations_dir}")
-
-        split_dirs[split] = split_dir
+            split_mapping[split] = split
+            
+    images_by_split = {split: [] for split in requested_splits}
+    if not os.path.exists(args.split_csv):
+        raise FileNotFoundError(f"Split CSV not found: {args.split_csv}")
+        
+    with open(args.split_csv, 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            csv_split = row['split']
+            if csv_split in split_mapping:
+                mapped_split = split_mapping[csv_split]
+                images_by_split[mapped_split].append(row['filename'])
 
     model = load_model(args.model_path, device)
 
     results_by_split = {}
     for split in requested_splits:
-        split_dir = split_dirs[split]
-        print(f"Evaluating split: {split} -> {split_dir}")
+        print(f"Evaluating split: {split} (found {len(images_by_split[split])} images in CSV)")
         results = evaluate_split(
             model,
-            split_dir,
+            args.images_dir,
+            args.annot_dir,
+            images_by_split[split],
             device=device,
             iou_threshold=args.iou_threshold,
             min_score=args.min_score,
