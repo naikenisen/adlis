@@ -316,7 +316,7 @@ def evaluate_split(model, images_dir, annot_dir, image_filenames, device, iou_th
 def make_figure(results_by_split, split_order, output_path, iou_threshold):
     apply_nature_style()
     # Nature double-column width is ~183 mm (~7.2 inches).
-    fig, axes = plt.subplots(1, 3, figsize=(7.2, 2.7), constrained_layout=True)
+    fig, axes = plt.subplots(1, 2, figsize=(4.8, 2.7), constrained_layout=True)
     palette = {
         "eval": "#1F77B4",
         "test": "#D62728",
@@ -326,19 +326,7 @@ def make_figure(results_by_split, split_order, output_path, iou_threshold):
     def color_for_split(split_name):
         return palette.get(split_name, palette["other"])
 
-    # 1) mAP bar chart
-    map_values = [results_by_split[s]["mAP"] for s in split_order]
-    bar_colors = [color_for_split(s) for s in split_order]
-    axes[0].bar(split_order, map_values, color=bar_colors, width=0.52, edgecolor="#2E3440", linewidth=0.6)
-    axes[0].set_ylim(0, 1.0)
-    axes[0].set_title(f"mAP@{iou_threshold:.2f}", pad=6, fontweight="bold")
-    axes[0].set_ylabel("mAP")
-    for idx, value in enumerate(map_values):
-        axes[0].text(idx, min(value + 0.025, 0.985), f"{value:.3f}", ha="center", fontsize=7, fontweight="bold")
-    axes[0].grid(axis="y", alpha=0.45)
-    style_axis(axes[0])
-
-    # 2) Precision-Recall curves
+    # 1) Precision-Recall curves
     has_pr = False
     for split in split_order:
         rec = results_by_split[split]["recall"]
@@ -347,19 +335,19 @@ def make_figure(results_by_split, split_order, output_path, iou_threshold):
         if len(rec) == 0:
             continue
         has_pr = True
-        axes[1].plot(rec, pre, color=color_for_split(split), label=f"{split} (AP={ap:.3f})")
+        axes[0].plot(rec, pre, color=color_for_split(split), label=f"{split} (AP={ap:.3f})")
 
-    axes[1].set_xlim(0, 1.0)
-    axes[1].set_ylim(0, 1.0)
-    axes[1].set_xlabel("Recall")
-    axes[1].set_ylabel("Precision")
-    axes[1].set_title("Precision-Recall", pad=6, fontweight="bold")
-    axes[1].grid(alpha=0.35)
+    axes[0].set_xlim(0, 1.0)
+    axes[0].set_ylim(0, 1.0)
+    axes[0].set_xlabel("Recall")
+    axes[0].set_ylabel("Precision")
+    axes[0].set_title("Precision-Recall", pad=6, fontweight="bold")
+    axes[0].grid(alpha=0.35)
     if has_pr:
-        axes[1].legend(loc="lower left", frameon=False)
-    style_axis(axes[1])
+        axes[0].legend(loc="lower left", frameon=False)
+    style_axis(axes[0])
 
-    # 3) IoU CDF curves (matched TP only)
+    # 2) IoU CDF curves (matched TP only)
     has_iou = False
     for split in split_order:
         ious = np.array(results_by_split[split]["ious"], dtype=np.float32)
@@ -368,29 +356,28 @@ def make_figure(results_by_split, split_order, output_path, iou_threshold):
         has_iou = True
         ious = np.sort(ious)
         cdf = np.arange(1, len(ious) + 1) / len(ious)
-        axes[2].plot(
+        axes[1].plot(
             ious,
             cdf,
             color=color_for_split(split),
             label=f"{split} (mean={ious.mean():.3f})",
         )
 
-    axes[2].set_xlim(0, 1.0)
-    axes[2].set_ylim(0, 1.0)
-    axes[2].set_xlabel("IoU")
-    axes[2].set_ylabel("Cumulative proportion")
-    axes[2].set_title("IoU CDF", pad=6, fontweight="bold")
-    axes[2].grid(alpha=0.35)
+    axes[1].set_xlim(0, 1.0)
+    axes[1].set_ylim(0, 1.0)
+    axes[1].set_xlabel("IoU")
+    axes[1].set_ylabel("Cumulative proportion")
+    axes[1].set_title("IoU CDF", pad=6, fontweight="bold")
+    axes[1].grid(alpha=0.35)
     if has_iou:
-        axes[2].legend(loc="lower right", frameon=False)
+        axes[1].legend(loc="lower right", frameon=False)
     else:
-        axes[2].text(0.5, 0.5, "No matched detections", ha="center", va="center")
-    style_axis(axes[2])
+        axes[1].text(0.5, 0.5, "No matched detections", ha="center", va="center")
+    style_axis(axes[1])
 
-    # Panel labels (A, B, C) for journal-style multi-panel figures.
+    # Panel labels (A, B) for journal-style multi-panel figures.
     axes[0].text(-0.22, 1.08, "A", transform=axes[0].transAxes, fontsize=10.5, fontweight="bold")
     axes[1].text(-0.22, 1.08, "B", transform=axes[1].transAxes, fontsize=10.5, fontweight="bold")
-    axes[2].text(-0.22, 1.08, "C", transform=axes[2].transAxes, fontsize=10.5, fontweight="bold")
 
     fig.savefig(output_path, dpi=600, bbox_inches="tight")
     root, _ = os.path.splitext(output_path)
