@@ -170,7 +170,7 @@ for epoch in range(num_epochs):
     # Save best model based on AUC-ROC
     if auc > best_auc:
         best_auc = auc
-        torch.save(model.state_dict(), 'best_model_auc.pth')
+        torch.save(model.state_dict(), '../weights/classification.pth')
         print(f'New best model saved based on AUC-ROC: {auc:.4f}')
         print('Confusion matrix')
         # Confusion Matrix Plotting

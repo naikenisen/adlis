@@ -10,8 +10,10 @@ import seaborn as sns
 import os
 from sklearn.metrics import confusion_matrix
 
+import os
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 # Paths
-MODEL_PATH = "/home/naiken/coding/adlis/Classification_resnet18/best_model_f1.pth"
+MODEL_PATH = os.path.join(project_root, "weights/classification.pth")
 TESTSET_PATH = "/home/naiken/coding/adlis/classification_dataset_v2/test"
 
 # Device

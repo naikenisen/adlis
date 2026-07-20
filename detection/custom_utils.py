@@ -79,7 +79,7 @@ class SaveBestModel:
             torch.save({
                 'epoch': epoch+1,
                 'model_state_dict': model.state_dict()
-            }, f"{OUT_DIR}/best_model.pth")
+            }, f"{OUT_DIR}/detection.pth")
 
 ### Métriques de détection
 

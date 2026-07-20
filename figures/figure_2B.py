@@ -13,11 +13,18 @@ import seaborn as sns
 from sklearn.metrics import f1_score, accuracy_score, roc_curve, auc, confusion_matrix
 from sklearn.preprocessing import label_binarize
 
+import os
+import sys
+
+# Set absolute paths from project root
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 # Paths
-MODEL_PATH = "/home/naiken/coding/adlis/Classification_resnet18/best_model_f1.pth"
-TRAINSET_PATH = "/home/naiken/coding/adlis/classification_dataset_v2/train"
-VALIDSET_PATH = "/home/naiken/coding/adlis/classification_dataset_v2/valid"
-TESTSET_PATH = "/home/naiken/coding/adlis/classification_dataset_v2/test"
+MODEL_PATH = os.path.join(project_root, "weights/classification.pth")
+TRAINSET_PATH = os.path.join(project_root, "dataset/classification_set/train")
+VALIDSET_PATH = os.path.join(project_root, "dataset/classification_set/valid")
+TESTSET_PATH = os.path.join(project_root, "dataset/classification_set/test")
+OUTPUT_FIGURE_PATH = os.path.join(project_root, "figures/figure_2B.png")
 
 # Device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -276,7 +283,5 @@ for col, name in enumerate(split_names):
             fontsize=10, fontweight='bold', va='bottom')
 
 # Save figure
-plt.savefig('classification_results_comprehensive.png', bbox_inches='tight')
-plt.savefig('classification_results_comprehensive.pdf', bbox_inches='tight')
-plt.savefig('classification_results_comprehensive.svg', bbox_inches='tight')
-print("\nFigure saved: classification_results_comprehensive.[png/pdf/svg]")
+plt.savefig(OUTPUT_FIGURE_PATH, bbox_inches='tight', dpi=300)
+print(f"\nFigure saved: {OUTPUT_FIGURE_PATH}")

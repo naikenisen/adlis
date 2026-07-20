@@ -33,7 +33,7 @@ from detection import model as od_model
 images_dir = os.path.join(project_root, "dataset/images")
 annot_dir = os.path.join(project_root, "dataset/annotations")
 split_csv = os.path.join(project_root, "dataset/split.csv")
-model_path = os.path.join(project_root, "weights/best_model.pth")
+model_path = os.path.join(project_root, "weights/detection.pth")
 iou_threshold = 0.5
 min_score = 0.001
 output_path = os.path.join(project_root, "figures/figure_S_3.png")
