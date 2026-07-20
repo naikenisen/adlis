@@ -12,8 +12,6 @@ dataset/
   annotations/
   split.csv
 """
-
-import argparse
 import glob
 import importlib
 import importlib.util
@@ -21,25 +19,18 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 import csv
-
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import cv2
 
-try:
-    tqdm = importlib.import_module("tqdm.auto").tqdm
-except ImportError as exc:
-    raise ImportError(
-        "tqdm is required for progress reporting. Install with: pip install tqdm"
-    ) from exc
-
-try:
-    cv2 = importlib.import_module("cv2")
-except ImportError as exc:
-    raise ImportError(
-        "OpenCV is required for classifier_eval.py. Install with: pip install opencv-python"
-    ) from exc
-
+images_dir = "dataset/images"
+annot_dir = "dataset/annotations"
+split_csv = "dataset/split.csv"
+model_path = "Streamlit_app/detection_model.pth"
+iou_threshold = 0.5
+min_score = 0.001
+output_path = "classifier_eval.png"
 
 def compute_iou(box_a, box_b):
     """Compute IoU between two boxes [xmin, ymin, xmax, ymax]."""
@@ -136,8 +127,6 @@ def find_annotation_file(annot_dir, image_path):
 
 def parse_voc_boxes(xml_path):
     """Parse Pascal VOC boxes and map all known classes to label=1."""
-    if xml_path is None or not os.path.exists(xml_path):
-        return [], []
 
     tree = ET.parse(xml_path)
     root = tree.getroot()
@@ -212,9 +201,6 @@ def load_model(model_path, device, num_classes=2):
 
     model_file = os.path.join(detector_dir, "model.py")
     spec = importlib.util.spec_from_file_location("od_model", model_file)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Unable to load model module from: {model_file}")
-
     od_model = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(od_model)
 
@@ -242,33 +228,12 @@ def load_model(model_path, device, num_classes=2):
 
 def evaluate_split(model, images_dir, annot_dir, image_filenames, device, iou_threshold=0.5, min_score=0.001, split_name="test"):
     image_paths = [os.path.join(images_dir, fname) for fname in image_filenames if os.path.exists(os.path.join(images_dir, fname))]
-    
-    if not image_paths:
-        return {
-            "ap": 0.0,
-            "mAP": 0.0,
-            "precision": np.array([]),
-            "recall": np.array([]),
-            "ious": [],
-            "num_images": 0,
-            "num_gt": 0,
-            "num_preds": 0,
-        }
 
     detections = []
     matched_ious = []
     total_gt = 0
 
-    progress = tqdm(
-        image_paths,
-        total=len(image_paths),
-        desc=f"Evaluating {split_name}",
-        unit="img",
-        dynamic_ncols=True,
-        leave=True,
-    )
-
-    for image_path in progress:
+    for image_path in image_paths:
         annotation_file = find_annotation_file(annot_dir, image_path)
         gt_boxes, _ = parse_voc_boxes(annotation_file)
         total_gt += len(gt_boxes)
@@ -316,14 +281,6 @@ def evaluate_split(model, images_dir, annot_dir, image_filenames, device, iou_th
                 matched_ious.append(best_iou)
 
             detections.append((float(score), is_tp, is_fp))
-
-        progress.set_postfix(
-            {
-                "GT": total_gt,
-                "Pred": len(detections),
-                "Matched": len(matched_ious),
-            }
-        )
 
     if detections:
         detections.sort(key=lambda x: x[0], reverse=True)
@@ -437,109 +394,40 @@ def make_figure(results_by_split, split_order, output_path, iou_threshold):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate detector and plot mAP/PR/IoU.")
-    parser.add_argument(
-        "--images-dir",
-        default="dataset/images",
-        help="Directory containing images.",
-    )
-    parser.add_argument(
-        "--annot-dir",
-        default="dataset/annotations",
-        help="Directory containing annotations.",
-    )
-    parser.add_argument(
-        "--split-csv",
-        default="dataset/split.csv",
-        help="CSV file mapping images to splits.",
-    )
-    parser.add_argument(
-        "--model-path",
-        default="Streamlit_app/detection_model.pth",
-        help="Path to Faster R-CNN checkpoint.",
-    )
-    parser.add_argument("--iou-threshold", type=float, default=0.5, help="IoU threshold for TP.")
-    parser.add_argument(
-        "--min-score",
-        type=float,
-        default=0.001,
-        help="Minimum score kept before PR/AP calculation.",
-    )
-    parser.add_argument(
-        "--output",
-        default="classifier_eval.png",
-        help="Output figure path.",
-    )
-    parser.add_argument(
-        "--splits",
-        default="eval,test",
-        help="Comma-separated splits to evaluate (e.g. eval,test).",
-    )
-    parser.add_argument("--device", default="auto", help="cpu, cuda, or auto")
-    parser.add_argument("--no-show", action="store_true", help="Do not display figure window.")
-    args = parser.parse_args()
-
-    if args.device == "auto":
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        device = torch.device(args.device)
-
-    if not os.path.exists(args.model_path):
-        raise FileNotFoundError(f"Model checkpoint not found: {args.model_path}")
-
-    requested_splits = [s.strip() for s in args.splits.split(",") if s.strip()]
-    if not requested_splits:
-        raise ValueError("No split provided. Use --splits eval,test")
-
-    split_mapping = {}
-    for split in requested_splits:
-        if split == "eval":
-            split_mapping["valid"] = split
-        else:
-            split_mapping[split] = split
-            
-    images_by_split = {split: [] for split in requested_splits}
-    if not os.path.exists(args.split_csv):
-        raise FileNotFoundError(f"Split CSV not found: {args.split_csv}")
+    device = torch.device("cpu")
         
-    with open(args.split_csv, 'r') as f:
+    requested_splits_set = set()
+    images_by_split = {}
+    
+    with open(split_csv, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            csv_split = row['split']
-            if csv_split in split_mapping:
-                mapped_split = split_mapping[csv_split]
-                images_by_split[mapped_split].append(row['filename'])
+            split_name = row['split']
+            requested_splits_set.add(split_name)
+            if split_name not in images_by_split:
+                images_by_split[split_name] = []
+            images_by_split[split_name].append(row['filename'])
+            
+    requested_splits = sorted(list(requested_splits_set))
 
-    model = load_model(args.model_path, device)
+    model = load_model(model_path, device)
 
     results_by_split = {}
     for split in requested_splits:
-        print(f"Evaluating split: {split} (found {len(images_by_split[split])} images in CSV)")
         results = evaluate_split(
             model,
-            args.images_dir,
-            args.annot_dir,
+            images_dir,
+            annot_dir,
             images_by_split[split],
             device=device,
-            iou_threshold=args.iou_threshold,
-            min_score=args.min_score,
+            iou_threshold=iou_threshold,
+            min_score=min_score,
             split_name=split,
         )
         results_by_split[split] = results
 
-        mean_iou = float(np.mean(results["ious"])) if results["ious"] else 0.0
-        print(
-            f"  images={results['num_images']} | gt_boxes={results['num_gt']} | "
-            f"preds={results['num_preds']} | AP={results['ap']:.4f} | mean IoU={mean_iou:.4f}"
-        )
-
-    fig = make_figure(results_by_split, requested_splits, args.output, args.iou_threshold)
-    print(f"Figure saved to: {args.output}")
-
-    if not args.no_show:
-        plt.show()
-    else:
-        plt.close(fig)
+    fig = make_figure(results_by_split, requested_splits, output_path, iou_threshold)
+    plt.close(fig)
 
 
 if __name__ == "__main__":
