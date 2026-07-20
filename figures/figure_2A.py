@@ -21,7 +21,7 @@ MODEL_PATH = os.path.join(project_root, "weights/classification.pth")
 TRAINSET_PATH = os.path.join(project_root, "dataset/classification_set/train")
 VALIDSET_PATH = os.path.join(project_root, "dataset/classification_set/valid")
 TESTSET_PATH = os.path.join(project_root, "dataset/classification_set/test")
-OUTPUT_FIGURE_PATH = os.path.join(project_root, "figures/figure_B.png")
+OUTPUT_FIGURE_PATH = os.path.join(project_root, "figures/figure_2A.png")
 
 # Device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
