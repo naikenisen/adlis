@@ -42,8 +42,8 @@ ground_truth_csv = os.path.join(project_root, "dataset/test-externe.csv")
 output_figure = os.path.join(project_root, "figures/figure_2C.png")
 
 # Use best models. Change these paths if your models are elsewhere
-det_model_path = os.path.join(project_root, "weights/best_model.pth")
-cls_model_path = os.path.join(project_root, "classification/best_model_auc.pth")
+det_model_path = os.path.join(project_root, "weights/detection.pth")
+cls_model_path = os.path.join(project_root, "weights/classification.pth")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
