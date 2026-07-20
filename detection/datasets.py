@@ -33,12 +33,14 @@ class CustomDataset(Dataset):
 
         # Lire l'image (BGR => RGB => float32 => [0,1] après /255.0)
         image = cv2.imread(image_path)
+        if image is None:
+            raise ValueError(f"Image not found or is empty: {image_path}")
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
         image_resized = cv2.resize(image, (self.width, self.height))
         image_resized /= 255.0
         
         # Fichier .xml correspondant
-        annot_filename = os.path.splitext(image_name)[0] + '.jpg.xml'
+        annot_filename = os.path.splitext(image_name)[0] + '.xml'
         annot_file_path = os.path.join(self.annot_path, annot_filename)
         
         boxes = []
