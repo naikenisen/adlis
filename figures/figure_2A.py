@@ -8,6 +8,7 @@ from matplotlib import rcParams
 import seaborn as sns
 from sklearn.metrics import f1_score, accuracy_score, roc_curve, auc, confusion_matrix
 from sklearn.preprocessing import label_binarize
+from tqdm import tqdm
 
 import os
 import sys
@@ -85,7 +86,7 @@ def evaluate_split(dataset: datasets.ImageFolder, batch_size: int = 64):
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     all_preds, all_labels, all_probs = [], [], []
     with torch.no_grad():
-        for inputs, labels in loader:
+        for inputs, labels in tqdm(loader, desc="Evaluating"):
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             probs = torch.softmax(outputs, dim=1)

@@ -30,6 +30,7 @@ from torchvision import models
 from torchvision.ops import nms
 from sklearn.linear_model import LinearRegression
 from scipy.stats import pearsonr
+from tqdm import tqdm
 
 # Set absolute paths from project root
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -126,7 +127,7 @@ def part_A():
     print(f"Scanning {test_externe_dir}...")
     subfolders = [f.path for f in os.scandir(test_externe_dir) if f.is_dir()]
     
-    for folder in subfolders:
+    for folder in tqdm(subfolders, desc="Processing Patients"):
         patient_id = os.path.basename(folder)
         image_files = glob.glob(os.path.join(folder, "*.*"))
         image_files = [f for f in image_files if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
@@ -134,7 +135,7 @@ def part_A():
         sc_count = 0
         sn_count = 0
         
-        for img_path in image_files:
+        for img_path in tqdm(image_files, desc=f"Patient {patient_id}", leave=False):
             try:
                 image = Image.open(img_path).convert("RGB")
                 boxes = predict_fasterrcnn(image, det_model, device)
