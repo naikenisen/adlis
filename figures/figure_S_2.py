@@ -14,7 +14,7 @@ import os
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 # Paths
 MODEL_PATH = os.path.join(project_root, "weights/classification.pth")
-TESTSET_PATH = "/home/naiken/coding/adlis/classification_dataset_v2/test"
+TESTSET_PATH = "/home/naiken/coding/adlis/dataset/classification_set/test"
 
 # Device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
