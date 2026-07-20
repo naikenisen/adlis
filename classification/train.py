@@ -7,7 +7,8 @@ from torchvision.transforms import v2
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.metrics import confusion_matrix, f1_score
+from sklearn.metrics import confusion_matrix, f1_score, roc_auc_score
+import torch.nn.functional as F
 import seaborn as sns
 
 # Set device
@@ -85,8 +86,7 @@ criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
 
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-best_accuracy = 0.0
-best_f1 = 0.0
+best_auc = 0.0
 
 # Training loop
 for epoch in range(num_epochs):
@@ -122,6 +122,7 @@ for epoch in range(num_epochs):
     TP, TN, FP, FN = 0, 0, 0, 0
     all_preds = []
     all_labels = []
+    all_probs = []
 
 
     with torch.no_grad():
@@ -132,11 +133,13 @@ for epoch in range(num_epochs):
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             _, predicted = torch.max(outputs, 1)
+            probs = F.softmax(outputs, dim=1)[:, 1]
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
             all_preds.extend(predicted.cpu().numpy())  # Store predictions
             all_labels.extend(labels.cpu().numpy())    # Store actual labels
+            all_probs.extend(probs.cpu().numpy())      # Store probabilities for AUC
 
             # Compute TP, TN, FP, FN for sensitivity and specificity
             for i in range(len(labels)):
@@ -160,19 +163,17 @@ for epoch in range(num_epochs):
     f1 = f1_score(all_labels, all_preds, average='weighted')  # Weighted F1 score for imbalanced classes
     print(f'F1 Score: {f1:.4f}')
 
-    # Save best model based on accuracy
-    if accuracy > best_accuracy:
-        best_accuracy = accuracy
-        torch.save(model.state_dict(), 'best_model_accuracy.pth')
-        print(f'New best model saved based on accuracy: {accuracy:.2f}%')
+    # Compute AUC-ROC
+    auc = roc_auc_score(all_labels, all_probs)
+    print(f'AUC-ROC: {auc:.4f}')
 
-    # Save best model based on F1-score
-    if f1 > best_f1:
-        best_f1 = f1
-        torch.save(model.state_dict(), 'best_model_f1.pth')
-        print(f'New best model saved based on F1-score: {f1:.4f}')
+    # Save best model based on AUC-ROC
+    if auc > best_auc:
+        best_auc = auc
+        torch.save(model.state_dict(), 'best_model_auc.pth')
+        print(f'New best model saved based on AUC-ROC: {auc:.4f}')
         print('Confusion matrix')
-        # Confusion Matrix Plotting (After final epoch)
+        # Confusion Matrix Plotting
         cm = confusion_matrix(all_labels, all_preds)
         plt.figure(figsize=(8,6))
         sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=valid_dataset.classes, yticklabels=valid_dataset.classes)
@@ -180,7 +181,7 @@ for epoch in range(num_epochs):
         plt.ylabel('True Label')
         plt.title('Confusion Matrix')
         plt.savefig('cm.png')
-        plt.show()
+        plt.close()
 
 
     accuracy = 100 * correct / total
