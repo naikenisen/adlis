@@ -12,25 +12,31 @@ dataset/
   annotations/
   split.csv
 """
-import glob
-import importlib
-import importlib.util
 import os
 import sys
+import glob
 import xml.etree.ElementTree as ET
 import csv
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import cv2
+from tqdm.auto import tqdm
 
-images_dir = "dataset/images"
-annot_dir = "dataset/annotations"
-split_csv = "dataset/split.csv"
-model_path = "Streamlit_app/detection_model.pth"
+# Ensure project root is in sys.path and define absolute paths
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from detection import model as od_model
+
+images_dir = os.path.join(project_root, "dataset/images")
+annot_dir = os.path.join(project_root, "dataset/annotations")
+split_csv = os.path.join(project_root, "dataset/split.csv")
+model_path = os.path.join(project_root, "weights/best_model.pth")
 iou_threshold = 0.5
 min_score = 0.001
-output_path = "classifier_eval.png"
+output_path = os.path.join(project_root, "figures/figure_S_3.png")
 
 def compute_iou(box_a, box_b):
     """Compute IoU between two boxes [xmin, ymin, xmax, ymax]."""
@@ -194,26 +200,8 @@ def list_images(images_dir):
 
 
 def load_model(model_path, device, num_classes=2):
-    project_root = os.path.dirname(os.path.abspath(__file__))
-    detector_dir = os.path.join(project_root, "Object_detection_fast_rcnn")
-    if detector_dir not in sys.path:
-        sys.path.insert(0, detector_dir)
-
-    model_file = os.path.join(detector_dir, "model.py")
-    spec = importlib.util.spec_from_file_location("od_model", model_file)
-    od_model = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(od_model)
-
     model = od_model.create_model(num_classes=num_classes)
-    # PyTorch >=2.6 defaults to weights_only=True, which can fail for
-    # checkpoints saved as full pickled objects/dicts in legacy projects.
-    # This project's checkpoint is trusted and local.
-    try:
-        checkpoint = torch.load(model_path, map_location=device, weights_only=False)
-    except TypeError:
-        # Compatibility with older PyTorch versions that do not expose
-        # the weights_only argument.
-        checkpoint = torch.load(model_path, map_location=device)
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
 
     if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
         state_dict = checkpoint["model_state_dict"]
@@ -233,7 +221,16 @@ def evaluate_split(model, images_dir, annot_dir, image_filenames, device, iou_th
     matched_ious = []
     total_gt = 0
 
-    for image_path in image_paths:
+    progress = tqdm(
+        image_paths,
+        total=len(image_paths),
+        desc=f"Evaluating {split_name}",
+        unit="img",
+        dynamic_ncols=True,
+        leave=True,
+    )
+
+    for image_path in progress:
         annotation_file = find_annotation_file(annot_dir, image_path)
         gt_boxes, _ = parse_voc_boxes(annotation_file)
         total_gt += len(gt_boxes)
@@ -281,6 +278,14 @@ def evaluate_split(model, images_dir, annot_dir, image_filenames, device, iou_th
                 matched_ious.append(best_iou)
 
             detections.append((float(score), is_tp, is_fp))
+
+        progress.set_postfix(
+            {
+                "GT": total_gt,
+                "Pred": len(detections),
+                "Matched": len(matched_ious),
+            }
+        )
 
     if detections:
         detections.sort(key=lambda x: x[0], reverse=True)
