@@ -9,6 +9,7 @@ import matplotlib as mpl
 import seaborn as sns
 import os
 from sklearn.metrics import confusion_matrix
+from tqdm import tqdm
 
 import os
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -97,7 +98,7 @@ def evaluate_testset(dataset, batch_size=20):
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     all_preds, all_labels, all_probs = [], [], []
     with torch.no_grad():
-        for inputs, labels in loader:
+        for inputs, labels in tqdm(loader, desc="Evaluating test set"):
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             probs = torch.softmax(outputs, dim=1)
@@ -125,36 +126,52 @@ df['pred_label'] = df['pred_idx'].map(idx_to_class)
 df['true_label_desc'] = df['true_label'].map(label_mapping)
 df['pred_label_desc'] = df['pred_label'].map(label_mapping)
 
-# Identify FP and FN
+# Identify TP, TN, FP, FN
 # For binary: class 0 (SC) is positive, class 1 (SN) is negative
+TP = df[(df['true_idx'] == 0) & (df['pred_idx'] == 0)]
+TN = df[(df['true_idx'] == 1) & (df['pred_idx'] == 1)]
 FP = df[(df['true_idx'] == 1) & (df['pred_idx'] == 0)]
 FN = df[(df['true_idx'] == 0) & (df['pred_idx'] == 1)]
 
-# Helper: get image thumbnails for plotting
-def plot_examples(df, title, out_path, n=24):
+def plot_all_boards(tp_df, tn_df, fp_df, fn_df, out_path, n=16):
     set_nature_style()
     sns.set_theme(context='paper', style='ticks')
-    n = min(n, len(df))
-    if n == 0:
-        print(f"No examples for {title}")
-        return
-    ncols = 4
-    nrows = int(np.ceil(n / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols*2.2, nrows*2.2))
-    axes = axes.flatten()
-    for i, (idx, row) in enumerate(df.head(n).iterrows()):
-        img = plt.imread(row['image_path'])
-        axes[i].imshow(img)
-        axes[i].axis('off')
-    for j in range(i+1, len(axes)):
-        axes[j].axis('off')
-    fig.suptitle(title, fontsize=10, fontweight='bold')
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
-    plt.savefig(out_path, bbox_inches='tight')
-    print(f"Saved: {out_path}")
+    
+    fig = plt.figure(figsize=(12, 12))
+    from matplotlib.gridspec import GridSpec
+    gs = GridSpec(2, 2, figure=fig, wspace=0.1, hspace=0.3)
+    
+    categories = [
+        ("Vrais Positifs (VP)", tp_df, gs[0, 0]),
+        ("Vrais Négatifs (VN)", tn_df, gs[0, 1]),
+        ("Faux Positifs (FP)", fp_df, gs[1, 0]),
+        ("Faux Négatifs (FN)", fn_df, gs[1, 1])
+    ]
+    
+    for title, df_subset, cell in categories:
+        inner_gs = cell.subgridspec(4, 4, wspace=0.05, hspace=0.05)
+        ax_title = fig.add_subplot(cell)
+        ax_title.axis('off')
+        ax_title.set_title(title, fontweight='bold', fontsize=12, pad=10)
+        
+        subset = df_subset.head(n)
+        for i in range(16):
+            r = i // 4
+            c = i % 4
+            ax = fig.add_subplot(inner_gs[r, c])
+            ax.axis('off')
+            if i < len(subset):
+                img_path = subset.iloc[i]['image_path']
+                try:
+                    img = plt.imread(img_path)
+                    ax.imshow(img)
+                except Exception:
+                    pass
+                    
+    output_path = os.path.join(project_root, "figures", out_path)
+    plt.savefig(output_path, bbox_inches='tight', dpi=300)
+    print(f"Saved: {output_path}")
 
-# Plot and save FP and FN boards
-plot_examples(FP, "Faux positifs (FP)", "false_positives_board.png", n=20)
-plot_examples(FN, "Faux négatifs (FN)", "false_negatives_board.png", n=20)
+plot_all_boards(TP, TN, FP, FN, "figure_S_2.png", n=16)
 
-print("\nCSV and PNG boards for FP/FN saved.")
+print("\nBoard for VP/VN/FP/FN saved.")
