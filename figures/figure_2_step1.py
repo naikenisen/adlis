@@ -1,25 +1,7 @@
-""" 
-A) Prédiction du pourcentage de SC par patients : le scripte reprendre la pipeline utilisée par
-app/app.py, pour la détection suivie de la classification des SC et SN, sur chaques images des sous-dossiers de
-dataset/test_externe. Pour chaque sous-dossiers de dataset/test_externe il détermine un pourcentrage
-de sidéroblastes en couronnes avec la formule suivant ((SC/SC+SN)*100). 
-Le scripte crée "dataset/inference-test-externe.csv" avec deux colonnes : "id" qui correspond au sous-dossiers
-et "prediction" qui correspond au pourcentrage de sidéroblastes en couronnes.
-
-B) Création du Bland-Altman plot et régression linéaire : le scripte reprendre 
-"dataset/test-externe.csv" et "dataset/inference-test-externe.csv" pour produire 
-un Bland-Altman plot et une regression linéaire pour comparer les "prediction" de 
-"dataset/inference-test-externe.csv" aux "valeur" de "dataset/test-externe.csv". 
-La correspondance se fera entre "id" de "dataset/test-externe.csv" et "id" de 
-"dataset/inference-test-externe.csv".
-
-"""
 import os
 import sys
 import glob
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
 import torch
 import torchvision.transforms as T
 from torchvision.transforms import v2
@@ -28,21 +10,15 @@ from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision import models
 from torchvision.ops import nms
-from sklearn.linear_model import LinearRegression
-from scipy.stats import pearsonr
 from tqdm import tqdm
 
-# Set absolute paths from project root
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 test_externe_dir = os.path.join(project_root, "dataset/test_externe")
 inference_csv = os.path.join(project_root, "dataset/inference-test-externe.csv")
-ground_truth_csv = os.path.join(project_root, "dataset/test-externe.csv")
-output_figure = os.path.join(project_root, "figures/figure_2C.png")
 
-# Use best models. Change these paths if your models are elsewhere
 det_model_path = os.path.join(project_root, "weights/detection.pth")
 cls_model_path = os.path.join(project_root, "weights/classification.pth")
 
@@ -106,10 +82,9 @@ def classify_crop(image, classifier, device):
     with torch.no_grad():
         output = classifier(image_tensor)
         _, predicted = torch.max(output, 1)
-    # class 0 corresponds to SC, class 1 corresponds to SN
     return "SC" if predicted.item() == 0 else "SN"
 
-def part_A():
+def main():
     print("Loading models...")
     if not os.path.exists(det_model_path) or not os.path.exists(cls_model_path):
         print(f"Error: Could not find models at:\n- {det_model_path}\n- {cls_model_path}")
@@ -160,79 +135,5 @@ def part_A():
     df_results.to_csv(inference_csv, index=False)
     print(f"Predictions saved to {inference_csv}")
 
-def part_B():
-    print("Generating plots...")
-    if not os.path.exists(inference_csv) or not os.path.exists(ground_truth_csv):
-        print(f"Missing CSV files for plotting:\n- {inference_csv}\n- {ground_truth_csv}")
-        return
-        
-    df_pred = pd.read_csv(inference_csv)
-    df_gt = pd.read_csv(ground_truth_csv)
-    
-    # Safe string conversion to merge patient IDs correctly
-    df_pred['id'] = df_pred['id'].astype(str).str.strip()
-    df_gt['id'] = df_gt['id'].astype(str).str.strip()
-    
-    df = pd.merge(df_gt, df_pred, on='id', how='inner')
-    
-    if df.empty:
-        print("Merged dataframe is empty! Check the IDs in both CSVs.")
-        return
-        
-    valeur = df['valeur'].values
-    prediction = df['prediction'].values
-    
-    # Bland-Altman
-    mean = np.mean([valeur, prediction], axis=0)
-    diff = prediction - valeur
-    md = np.mean(diff)
-    sd = np.std(diff, axis=0)
-    
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-    
-    # Plot 1: Linear Regression
-    ax1.scatter(valeur, prediction, alpha=0.7, color='#1F77B4')
-    
-    reg = LinearRegression().fit(valeur.reshape(-1, 1), prediction)
-    line_x = np.array([min(valeur), max(valeur)])
-    line_y = reg.predict(line_x.reshape(-1, 1))
-    ax1.plot(line_x, line_y, color='red', label='Regression Line')
-    
-    ideal_x = np.array([0, max(valeur)])
-    ax1.plot(ideal_x, ideal_x, color='gray', linestyle='--', label='y = x')
-    
-    r, p = pearsonr(valeur, prediction)
-    ax1.text(0.05, 0.95, f'r = {r:.2f}\np = {p:.2e}', transform=ax1.transAxes, 
-             fontsize=11, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-             
-    ax1.set_xlabel('Ground Truth (%)')
-    ax1.set_ylabel('Prediction (%)')
-    ax1.set_title('Linear Regression')
-    ax1.legend()
-    ax1.grid(True, linestyle='--', alpha=0.6)
-    
-    # Plot 2: Bland-Altman
-    ax2.scatter(mean, diff, alpha=0.7, color='#1F77B4')
-    ax2.axhline(md, color='red', linestyle='-', label=f'Mean Diff = {md:.2f}')
-    ax2.axhline(md + 1.96*sd, color='gray', linestyle='--', label=f'+1.96 SD = {md + 1.96*sd:.2f}')
-    ax2.axhline(md - 1.96*sd, color='gray', linestyle='--', label=f'-1.96 SD = {md - 1.96*sd:.2f}')
-    
-    ax2.set_xlabel('Mean of GT and Prediction (%)')
-    ax2.set_ylabel('Difference (Prediction - GT) (%)')
-    ax2.set_title('Bland-Altman Plot')
-    ax2.legend()
-    ax2.grid(True, linestyle='--', alpha=0.6)
-    
-    plt.tight_layout()
-    plt.savefig(output_figure, dpi=300)
-    plt.close()
-    print(f"Figure saved to {output_figure}")
-
 if __name__ == "__main__":
-    if not os.path.exists(inference_csv):
-        part_A()
-    else:
-        print(f"Inference file {inference_csv} already exists.")
-        print("Skipping part A (delete the CSV to rerun inference on images).")
-    
-    part_B()
+    main()
