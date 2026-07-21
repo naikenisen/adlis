@@ -24,8 +24,8 @@ def main():
     df_gt = pd.read_csv(ground_truth_csv)
     
     # Safe string conversion to merge patient IDs correctly
-    df_pred['id'] = df_pred['id'].astype(str).str.strip()
-    df_gt['id'] = df_gt['id'].astype(str).str.strip()
+    df_pred['id'] = df_pred['id'].astype(str).str.strip().str[:10]
+    df_gt['id'] = df_gt['id'].astype(str).str.strip().str[:10]
     
     df = pd.merge(df_gt, df_pred, on='id', how='inner')
     
