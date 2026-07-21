@@ -63,7 +63,7 @@ inference_transforms = v2.Compose([
                  std=[0.229, 0.224, 0.225]),
 ])
 
-def predict_fasterrcnn(image, model, device, threshold=0.5, iou_threshold=0.4):
+def predict_fasterrcnn(image, model, device, threshold=0.85, iou_threshold=0.50):
     transform = T.Compose([T.ToTensor()])
     image_tensor = transform(image).unsqueeze(0).to(device)
     with torch.no_grad():
