@@ -77,12 +77,12 @@ def predict_fasterrcnn(image, model, device, threshold=0.85, iou_threshold=0.50)
     boxes = boxes[keep]
     return boxes.cpu().numpy()
 
-def classify_crop(image, classifier, device):
+def classify_crop(image, classifier, device, threshold_sc=0.80):
     image_tensor = inference_transforms(image).unsqueeze(0).to(device)
     with torch.no_grad():
         output = classifier(image_tensor)
-        _, predicted = torch.max(output, 1)
-    return "SC" if predicted.item() == 0 else "SN"
+        probs = torch.nn.functional.softmax(output, dim=1)
+    return "SC" if probs[0, 0] > threshold_sc else "SN"
 
 def main():
     print("Loading models...")
