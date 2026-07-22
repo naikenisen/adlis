@@ -60,8 +60,8 @@ class_weights = class_weights / class_weights.sum()  # Normalize weights
 class_weights_tensor = torch.FloatTensor(class_weights).to(device)  # Move weights to the GPU if available
 
 
-# Use a pre-trained model (ResNet18)
-model = models.resnet18(weights='IMAGENET1K_V1')
+# Use a pre-trained model (ResNet50)
+model = models.resnet50(weights='IMAGENET1K_V1')
 # Modify the final layer to classify two classes
 # Customize the fully connected (FC) layer
 model.fc = nn.Sequential(
