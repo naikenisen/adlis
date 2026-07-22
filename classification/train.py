@@ -17,7 +17,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Hyperparameters
 batch_size = 64
 learning_rate = 0.001
-num_epochs = 100
+num_epochs = 200
 num_classes = 2
 
 # Define transforms for training and validation
@@ -89,6 +89,10 @@ scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0
 
 best_pr_auc = 0.0
 
+history_train_loss = []
+history_valid_loss = []
+history_valid_pr_auc = []
+
 # Training loop
 for epoch in range(num_epochs):
     model.train()
@@ -114,10 +118,12 @@ for epoch in range(num_epochs):
         train_loader_tqdm.set_postfix(loss=running_loss/len(train_loader))
 
 
-    print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}')
+    epoch_train_loss = running_loss / len(train_loader)
+    print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_train_loss:.4f}')
 
     # Validation
     model.eval()
+    valid_running_loss = 0.0
     all_labels = []
     all_probs = []
 
@@ -128,12 +134,16 @@ for epoch in range(num_epochs):
 
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
+            
+            loss = criterion(outputs, labels)
+            valid_running_loss += loss.item()
+            
             probs = F.softmax(outputs, dim=1)[:, 0]  # Store probs of class 0 (SC)
 
             all_labels.extend(labels.cpu().numpy())    # Store actual labels
             all_probs.extend(probs.cpu().numpy())      # Store probabilities for AUC
 
-
+    epoch_valid_loss = valid_running_loss / len(valid_loader)
 
     # Invert labels for metrics so SC (class 0) becomes the positive class
     labels_sc = 1 - np.array(all_labels)
@@ -141,7 +151,11 @@ for epoch in range(num_epochs):
 
     # Compute AUC-PR targeting SC
     pr_auc = average_precision_score(labels_sc, probs_sc)
-    print(f'AUC-PR (SC): {pr_auc:.4f}')
+    print(f'Validation Loss: {epoch_valid_loss:.4f} | AUC-PR (SC): {pr_auc:.4f}')
+    
+    history_train_loss.append(epoch_train_loss)
+    history_valid_loss.append(epoch_valid_loss)
+    history_valid_pr_auc.append(pr_auc)
 
     # Save best model based on AUC-PR
     if pr_auc > best_pr_auc:
@@ -158,3 +172,34 @@ for epoch in range(num_epochs):
     scheduler.step(pr_auc)
 
 print("Training complete.")
+
+# Generate Figure S_6
+import os
+import matplotlib.pyplot as plt
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+fig_path = os.path.join(ROOT_DIR, 'figures', 'figure_S_6.png')
+os.makedirs(os.path.dirname(fig_path), exist_ok=True)
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+epochs_range = range(1, len(history_train_loss) + 1)
+ax1.plot(epochs_range, history_train_loss, label='Train Loss', color='#1F77B4', lw=2)
+ax1.plot(epochs_range, history_valid_loss, label='Validation Loss', color='#FF7F0E', lw=2)
+ax1.set_xlabel('Epochs')
+ax1.set_ylabel('Loss (Weighted CrossEntropy)')
+ax1.set_title('a) Training and Validation Loss')
+ax1.legend()
+ax1.grid(True, linestyle='--', alpha=0.7)
+
+ax2.plot(epochs_range, history_valid_pr_auc, label='Validation AUC-PR (SC)', color='#2CA02C', lw=2)
+ax2.set_xlabel('Epochs')
+ax2.set_ylabel('AUC-PR')
+ax2.set_title('b) Validation AUC-PR over Epochs')
+ax2.legend()
+ax2.grid(True, linestyle='--', alpha=0.7)
+
+plt.tight_layout()
+plt.savefig(fig_path, dpi=300)
+plt.close()
+print(f"Saved learning curves to {fig_path}")
