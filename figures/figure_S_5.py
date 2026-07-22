@@ -174,23 +174,5 @@ def main():
     fig.savefig(f"{root}.pdf", bbox_inches="tight")
     print(f"Saved figure to {output_path}")
 
-    # --- Generate Confusion Matrix with Optimal Threshold ---
-    from sklearn.metrics import confusion_matrix
-    import seaborn as sns
-    
-    optimal_preds = np.where(all_probs_sc >= best_thresh, 0, 1)
-    cm = confusion_matrix(all_labels, optimal_preds)
-    
-    fig_cm, ax_cm = plt.subplots(figsize=(6, 5))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax_cm,
-                xticklabels=["SC (0)", "SN (1)"], yticklabels=["SC (0)", "SN (1)"])
-    ax_cm.set_xlabel('Predicted Label')
-    ax_cm.set_ylabel('True Label')
-    ax_cm.set_title(f'Confusion Matrix at Optimal Threshold ({best_thresh:.3f})')
-    
-    cm_output_path = os.path.join(project_root, "figures/optimal_confusion_matrix.png")
-    fig_cm.savefig(cm_output_path, dpi=300, bbox_inches="tight")
-    print(f"Saved optimal confusion matrix to {cm_output_path}")
-
 if __name__ == "__main__":
     main()

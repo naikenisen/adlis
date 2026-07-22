@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 import seaborn as sns
-from sklearn.metrics import f1_score, accuracy_score, roc_curve, auc, confusion_matrix
+from sklearn.metrics import f1_score, accuracy_score, roc_curve, auc, confusion_matrix, precision_recall_curve, average_precision_score
 from sklearn.preprocessing import label_binarize
 from tqdm import tqdm
 
@@ -62,7 +62,7 @@ valid_dataset = datasets.ImageFolder(root=VALIDSET_PATH, transform=test_transfor
 test_dataset = datasets.ImageFolder(root=TESTSET_PATH, transform=test_transforms)
 
 num_classes = len(train_dataset.classes)
-model = models.resnet18(weights=None)
+model = models.resnet50(weights=None)
 model.fc = nn.Sequential(
     nn.Linear(model.fc.in_features, 512),
     nn.ReLU(),
@@ -84,20 +84,17 @@ model.eval()
 
 def evaluate_split(dataset: datasets.ImageFolder, batch_size: int = 64):
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-    all_preds, all_labels, all_probs = [], [], []
+    all_labels, all_probs = [], []
     with torch.no_grad():
         for inputs, labels in tqdm(loader, desc="Evaluating"):
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             probs = torch.softmax(outputs, dim=1)
-            _, predicted = torch.max(outputs, 1)
-            all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
             all_probs.extend(probs.cpu().numpy())
     return (
         np.array(all_labels),
-        np.array(all_probs),
-        np.array(all_preds),
+        np.array(all_probs)
     )
 
 splits = {
@@ -106,14 +103,36 @@ splits = {
     "Test": test_dataset,
 }
 
+# --- Calculate Optimal Threshold on Validation Set ---
+y_true_val, y_score_val = evaluate_split(valid_dataset)
+prob_sc_val = y_score_val[:, 0]
+label_sc_val = 1 - y_true_val  # SC=1, SN=0
+
+thresholds = np.linspace(0.01, 0.99, 99)
+f1s = []
+for t in thresholds:
+    preds = np.where(prob_sc_val >= t, 1, 0)
+    f1s.append(f1_score(label_sc_val, preds))
+best_thresh = thresholds[np.argmax(f1s)]
+print(f"Optimal SC Classification Threshold (Max F1): {best_thresh:.4f}")
+
+# --- Generate predictions for all sets ---
 results = {}
 for name, ds in splits.items():
-    y_true, y_score, y_pred = evaluate_split(ds)
+    if name == "Valid":
+        y_true, y_score = y_true_val, y_score_val
+    else:
+        y_true, y_score = evaluate_split(ds)
+        
+    prob_sc = y_score[:, 0]
+    # Apply optimal threshold: if prob_sc >= best_thresh -> 0 (SC), else 1 (SN)
+    y_pred = np.where(prob_sc >= best_thresh, 0, 1)
+    
     acc = accuracy_score(y_true, y_pred)
     f1 = f1_score(y_true, y_pred, average='weighted')
     cm = confusion_matrix(y_true, y_pred)
     
-    # Assuming class 0 (SC) is positive
+    # Class 0 (SC) as positive for Sens/Spec
     TP, FN = cm[0, 0], cm[0, 1]
     FP, TN = cm[1, 0], cm[1, 1]
     sensitivity = TP / (TP + FN) if (TP + FN) > 0 else 0
@@ -146,12 +165,16 @@ def make_annotation(cm: np.ndarray) -> np.ndarray:
 sns.set_theme(context='paper', style='ticks')
 
 mm = 1/25.4
-# We use 180mm width. Height 130mm is good for 2 rows.
-fig_w, fig_h = 180*mm, 130*mm  
+# We use 180mm width. Height 190mm for 3 rows.
+fig_w, fig_h = 180*mm, 190*mm  
 fig = plt.figure(figsize=(fig_w, fig_h))
 # Constrained layout is better, but gridspec allows custom spacing
-gs = fig.add_gridspec(2, 3, hspace=0.45, wspace=0.3, 
-                       left=0.08, right=0.90, top=0.95, bottom=0.08)
+gs = fig.add_gridspec(3, 3, hspace=0.45, wspace=0.3, 
+                       left=0.08, right=0.90, top=0.90, bottom=0.08)
+
+# Add title showing the optimal threshold
+fig.suptitle(f"Optimal SC Threshold: {best_thresh:.3f} (Max F1 Score)", 
+             fontsize=10, fontweight='bold', color='#D62728', y=0.98)
 
 class_labels = list(train_dataset.classes)
 label_mapping = {
@@ -166,7 +189,7 @@ split_colors = {
     "Test":  '#7570b3',
 }
 
-panel_letters = ['A', 'B', 'C', 'D', 'E', 'F']
+panel_letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']
 split_names = ["Train", "Valid", "Test"]
 
 # Top row: Confusion matrices
@@ -215,38 +238,25 @@ if mappable_for_cbar is not None:
     )
     cbar.set_label('Row-normalized proportion')
 
-# Bottom row: ROC curves
+# Middle row: ROC curves
 for col, name in enumerate(split_names):
     ax = fig.add_subplot(gs[1, col])
     y_true = results[name]["y_true"]
     y_score = results[name]["y_score"]
     
-    if num_classes == 2:
-        fpr, tpr, _ = roc_curve(y_true, y_score[:, 1])
-        roc_auc = auc(fpr, tpr)
-        ax.plot(fpr, tpr, color=split_colors[name], lw=1.5, 
-                label=f'AUC = {roc_auc:.3f}')
-    else:
-        y_true_bin = label_binarize(y_true, classes=list(range(num_classes)))
-        fpr_dict = {}
-        tpr_dict = {}
-        for i in range(num_classes):
-            fpr_dict[i], tpr_dict[i], _ = roc_curve(y_true_bin[:, i], y_score[:, i])
-        
-        all_fpr = np.unique(np.concatenate([fpr_dict[i] for i in range(num_classes)]))
-        mean_tpr = np.zeros_like(all_fpr)
-        for i in range(num_classes):
-            mean_tpr += np.interp(all_fpr, fpr_dict[i], tpr_dict[i])
-        mean_tpr /= num_classes
-        
-        roc_auc = auc(all_fpr, mean_tpr)
-        ax.plot(all_fpr, mean_tpr, color=split_colors[name], lw=1.5,
-                label=f'Macro AUC = {roc_auc:.3f}')
+    # We invert labels so SC (0) is positive
+    label_sc = 1 - y_true
+    prob_sc = y_score[:, 0]
+    
+    fpr, tpr, _ = roc_curve(label_sc, prob_sc)
+    roc_auc = auc(fpr, tpr)
+    ax.plot(fpr, tpr, color=split_colors[name], lw=1.5, 
+            label=f'AUC = {roc_auc:.3f}')
     
     ax.plot([0, 1], [0, 1], color='gray', lw=1.0, linestyle='--', alpha=0.7)
     
-    ax.set_xlabel('False Positive Rate', fontsize=8)
-    ax.set_ylabel('True Positive Rate', fontsize=8)
+    ax.set_xlabel('False Positive Rate (for SC)', fontsize=8)
+    ax.set_ylabel('True Positive Rate (for SC)', fontsize=8)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.set_aspect('equal')
@@ -256,5 +266,34 @@ for col, name in enumerate(split_names):
     ax.text(-0.25, 1.08, panel_letters[col + 3], transform=ax.transAxes, 
             fontsize=10, fontweight='bold', va='bottom')
 
+# Bottom row: PR curves
+for col, name in enumerate(split_names):
+    ax = fig.add_subplot(gs[2, col])
+    y_true = results[name]["y_true"]
+    y_score = results[name]["y_score"]
+    
+    # We invert labels so SC (0) is positive
+    label_sc = 1 - y_true
+    prob_sc = y_score[:, 0]
+    
+    precision, recall, _ = precision_recall_curve(label_sc, prob_sc)
+    pr_auc = average_precision_score(label_sc, prob_sc)
+    
+    ax.plot(recall, precision, color=split_colors[name], lw=1.5, 
+            label=f'AUC-PR = {pr_auc:.3f}')
+    
+    ax.set_xlabel('Recall (for SC)', fontsize=8)
+    ax.set_ylabel('Precision (for SC)', fontsize=8)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal')
+    ax.legend(loc='lower left', frameon=False, fontsize=7)
+    ax.tick_params(labelsize=7)
+    
+    ax.text(-0.25, 1.08, panel_letters[col + 6], transform=ax.transAxes, 
+            fontsize=10, fontweight='bold', va='bottom')
+
 plt.savefig(OUTPUT_FIGURE_PATH, bbox_inches='tight', dpi=300)
+root, _ = os.path.splitext(OUTPUT_FIGURE_PATH)
+plt.savefig(f"{root}.pdf", bbox_inches='tight', dpi=300)
 print(f"\nFigure saved: {OUTPUT_FIGURE_PATH}")
