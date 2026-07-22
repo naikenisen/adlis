@@ -7,7 +7,7 @@ from torchvision.transforms import v2
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.metrics import confusion_matrix, f1_score, roc_auc_score
+from sklearn.metrics import confusion_matrix, f1_score, roc_auc_score, average_precision_score
 import torch.nn.functional as F
 import seaborn as sns
 
@@ -105,7 +105,7 @@ criterion = FocalLoss(weight=class_weights_tensor, gamma=2.0)
 
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-best_auc = 0.0
+best_pr_auc = 0.0
 
 # Training loop
 for epoch in range(num_epochs):
@@ -152,7 +152,7 @@ for epoch in range(num_epochs):
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             _, predicted = torch.max(outputs, 1)
-            probs = F.softmax(outputs, dim=1)[:, 1]
+            probs = F.softmax(outputs, dim=1)[:, 0]  # Store probs of class 0 (SC)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
@@ -160,16 +160,16 @@ for epoch in range(num_epochs):
             all_labels.extend(labels.cpu().numpy())    # Store actual labels
             all_probs.extend(probs.cpu().numpy())      # Store probabilities for AUC
 
-            # Compute TP, TN, FP, FN for sensitivity and specificity
+            # Compute TP, TN, FP, FN for sensitivity and specificity (Tracking Class 0: SC)
             for i in range(len(labels)):
-                if labels[i] == 1 and predicted[i] == 1:
-                    TP += 1
-                elif labels[i] == 0 and predicted[i] == 0:
-                    TN += 1
-                elif labels[i] == 0 and predicted[i] == 1:
-                    FP += 1
+                if labels[i] == 0 and predicted[i] == 0:
+                    TP += 1  # True Positive: It's SC and predicted SC
+                elif labels[i] == 1 and predicted[i] == 1:
+                    TN += 1  # True Negative: It's SN and predicted SN
                 elif labels[i] == 1 and predicted[i] == 0:
-                    FN += 1
+                    FP += 1  # False Positive: It's SN but predicted SC
+                elif labels[i] == 0 and predicted[i] == 1:
+                    FN += 1  # False Negative: It's SC but predicted SN
             #valid_loader_tqdm.set_postfix(loss=running_loss/len(va))
 
 
@@ -180,17 +180,28 @@ for epoch in range(num_epochs):
 
     # Compute F1 Score
     f1 = f1_score(all_labels, all_preds, average='weighted')  # Weighted F1 score for imbalanced classes
-    print(f'F1 Score: {f1:.4f}')
+    print(f'F1 Score (weighted): {f1:.4f}')
 
-    # Compute AUC-ROC
-    auc = roc_auc_score(all_labels, all_probs)
-    print(f'AUC-ROC: {auc:.4f}')
+    # Invert labels for metrics so SC (class 0) becomes the positive class
+    labels_sc = 1 - np.array(all_labels)
+    probs_sc = np.array(all_probs)
 
-    # Save best model based on AUC-ROC
-    if auc > best_auc:
-        best_auc = auc
-        torch.save(model.state_dict(), '../weights/classification.pth')
-        print(f'New best model saved based on AUC-ROC: {auc:.4f}')
+    # Compute AUC-ROC and AUC-PR targeting SC
+    auc = roc_auc_score(labels_sc, probs_sc)
+    pr_auc = average_precision_score(labels_sc, probs_sc)
+    print(f'AUC-ROC (SC): {auc:.4f}')
+    print(f'AUC-PR (SC): {pr_auc:.4f}')
+
+    # Save best model based on AUC-PR
+    if pr_auc > best_pr_auc:
+        best_pr_auc = pr_auc
+        import os
+        ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        weights_dir = os.path.join(ROOT_DIR, 'weights')
+        os.makedirs(weights_dir, exist_ok=True)
+        
+        torch.save(model.state_dict(), os.path.join(weights_dir, 'classification.pth'))
+        print(f'New best model saved based on AUC-PR: {pr_auc:.4f}')
         print('Confusion matrix')
         # Confusion Matrix Plotting
         cm = confusion_matrix(all_labels, all_preds)

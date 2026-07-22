@@ -24,7 +24,7 @@ test_dir = os.path.join(project_root, "dataset/classification_set/test")
 output_path = os.path.join(project_root, "figures/figure_S_5.png")
 
 def load_classifier(model_path, device, num_classes=2):
-    model = models.resnet18(weights=None)
+    model = models.resnet50(weights=None)
     model.fc = torch.nn.Sequential(
         torch.nn.Linear(model.fc.in_features, 512), torch.nn.ReLU(), torch.nn.Dropout(0.5),
         torch.nn.Linear(512, 256), torch.nn.ReLU(), torch.nn.Dropout(0.5),
