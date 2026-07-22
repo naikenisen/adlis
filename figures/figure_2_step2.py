@@ -21,6 +21,8 @@ def main():
         return
         
     df_pred = pd.read_csv(inference_csv)
+    if 'SC' in df_pred.columns and 'SN' in df_pred.columns:
+        df_pred = df_pred[(df_pred['SC'] + df_pred['SN']) >= 100]
     df_gt = pd.read_csv(ground_truth_csv)
     
     # Safe string conversion to merge patient IDs correctly

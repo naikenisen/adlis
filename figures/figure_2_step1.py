@@ -63,7 +63,7 @@ inference_transforms = v2.Compose([
                  std=[0.229, 0.224, 0.225]),
 ])
 
-def predict_fasterrcnn(image, model, device, threshold=0.85, iou_threshold=0.50):
+def predict_fasterrcnn(image, model, device, threshold=0.5, iou_threshold=0.50):
     transform = T.Compose([T.ToTensor()])
     image_tensor = transform(image).unsqueeze(0).to(device)
     with torch.no_grad():
@@ -77,7 +77,7 @@ def predict_fasterrcnn(image, model, device, threshold=0.85, iou_threshold=0.50)
     boxes = boxes[keep]
     return boxes.cpu().numpy()
 
-def classify_crop(image, classifier, device, threshold_sc=0.85):
+def classify_crop(image, classifier, device, threshold_sc=0.90):
     image_tensor = inference_transforms(image).unsqueeze(0).to(device)
     with torch.no_grad():
         output = classifier(image_tensor)
@@ -129,7 +129,7 @@ def main():
         percentage = (sc_count / total * 100.0) if total > 0 else 0.0
         
         print(f"Patient {patient_id}: SC={sc_count}, SN={sn_count}, %SC={percentage:.2f}%")
-        results.append({"id": patient_id, "prediction": percentage})
+        results.append({"id": patient_id, "prediction": percentage, "SC": sc_count, "SN": sn_count, "predicted_percent": percentage})
         
     df_results = pd.DataFrame(results)
     df_results.to_csv(inference_csv, index=False)
