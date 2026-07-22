@@ -81,29 +81,11 @@ model.fc = nn.Sequential(
 )
 model = model.to(device)
 
-class FocalLoss(nn.Module):
-    def __init__(self, weight=None, gamma=2.0, reduction='mean'):
-        super(FocalLoss, self).__init__()
-        self.weight = weight
-        self.gamma = gamma
-        self.reduction = reduction
-
-    def forward(self, inputs, targets):
-        ce_loss = F.cross_entropy(inputs, targets, weight=self.weight, reduction='none')
-        pt = torch.exp(-ce_loss)
-        focal_loss = ((1 - pt) ** self.gamma) * ce_loss
-        
-        if self.reduction == 'mean':
-            return focal_loss.mean()
-        elif self.reduction == 'sum':
-            return focal_loss.sum()
-        else:
-            return focal_loss
-
 # Loss function and optimizer
-criterion = FocalLoss(weight=class_weights_tensor, gamma=2.0)
+criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
 
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=5, verbose=True)
 
 best_pr_auc = 0.0
 
@@ -220,5 +202,8 @@ for epoch in range(num_epochs):
 
     print(f'Validation Accuracy: {accuracy:.2f}%')
     print(f'Sensitivity: {sensitivity:.4f}, Specificity: {specificity:.4f}')
+
+    # Step the scheduler based on the validation AUC-PR
+    scheduler.step(pr_auc)
 
 print("Training complete.")
