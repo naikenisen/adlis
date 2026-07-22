@@ -77,7 +77,7 @@ def predict_fasterrcnn(image, model, device, threshold=0.5, iou_threshold=0.50):
     boxes = boxes[keep]
     return boxes.cpu().numpy()
 
-def classify_crop(image, classifier, device, threshold_sc=0.90):
+def classify_crop(image, classifier, device, threshold_sc=0.50):
     image_tensor = inference_transforms(image).unsqueeze(0).to(device)
     with torch.no_grad():
         output = classifier(image_tensor)
