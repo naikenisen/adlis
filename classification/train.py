@@ -85,7 +85,7 @@ model = model.to(device)
 criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
 
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=5, verbose=True)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=20, verbose=True)
 
 best_pr_auc = 0.0
 
@@ -168,8 +168,8 @@ for epoch in range(num_epochs):
         torch.save(model.state_dict(), os.path.join(weights_dir, 'classification.pth'))
         print(f'New best model saved based on AUC-PR: {pr_auc:.4f}')
 
-    # Step the scheduler based on the validation AUC-PR
-    scheduler.step(pr_auc)
+    # Step the scheduler based on the validation Loss
+    scheduler.step(epoch_valid_loss)
 
 print("Training complete.")
 
