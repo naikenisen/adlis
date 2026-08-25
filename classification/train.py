@@ -178,34 +178,3 @@ for epoch in range(num_epochs):
     scheduler.step(epoch_valid_loss)
 
 print("Training complete.")
-
-# Generate Figure S_6
-import os
-import matplotlib.pyplot as plt
-
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-fig_path = os.path.join(ROOT_DIR, 'figures', 'figure_S_6.png')
-os.makedirs(os.path.dirname(fig_path), exist_ok=True)
-
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-
-epochs_range = range(1, len(history_train_loss) + 1)
-ax1.plot(epochs_range, history_train_loss, label='Train Loss', color='#1F77B4', lw=2)
-ax1.plot(epochs_range, history_valid_loss, label='Validation Loss', color='#FF7F0E', lw=2)
-ax1.set_xlabel('Epochs')
-ax1.set_ylabel('Loss (Weighted CrossEntropy)')
-ax1.set_title('a) Training and Validation Loss')
-ax1.legend()
-ax1.grid(True, linestyle='--', alpha=0.7)
-
-ax2.plot(epochs_range, history_valid_pr_auc, label='Validation AUC-PR (SC)', color='#2CA02C', lw=2)
-ax2.set_xlabel('Epochs')
-ax2.set_ylabel('AUC-PR')
-ax2.set_title('b) Validation AUC-PR over Epochs')
-ax2.legend()
-ax2.grid(True, linestyle='--', alpha=0.7)
-
-plt.tight_layout()
-plt.savefig(fig_path, dpi=300)
-plt.close()
-print(f"Saved learning curves to {fig_path}")
