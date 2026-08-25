@@ -27,10 +27,16 @@ train_transforms = v2.Compose([
 
     v2.RandomHorizontalFlip(),
     v2.RandomVerticalFlip(),
-    v2.RandomZoomOut(),
+    v2.RandomAffine(
+        degrees=180, 
+        translate=(0.1, 0.1), 
+        scale=(0.9, 1.1),
+        padding_mode='reflect' 
+    ),
+    v2.RandomApply([
+        v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05)
+    ], p=0.8),
     v2.RandomRotation(90),
-    v2.GaussianBlur(3),
-    v2.RandomAdjustSharpness(0),
     v2.ToDtype(torch.float32, scale=True),
     v2.Resize((224, 224)),
     v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
