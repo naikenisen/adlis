@@ -16,7 +16,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 test_externe_dir = os.path.join(project_root, "dataset/test_externe")
-output_dir = os.path.join(project_root, "troubleshoot_results")
+output_dir = os.path.join(project_root, "dataset/troubleshoot_results")
 
 det_model_path = os.path.join(project_root, "weights/detection.pth")
 # User requested specifically to use classification-old.pth
