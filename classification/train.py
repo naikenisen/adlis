@@ -28,10 +28,9 @@ train_transforms = v2.Compose([
     v2.RandomHorizontalFlip(),
     v2.RandomVerticalFlip(),
     v2.RandomAffine(
-        degrees=180, 
-        translate=(0.1, 0.1), 
-        scale=(0.9, 1.1),
-        padding_mode='reflect' 
+            degrees=180, 
+            translate=(0.1, 0.1), 
+            scale=(0.9, 1.1)
     ),
     v2.RandomApply([
         v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05)
