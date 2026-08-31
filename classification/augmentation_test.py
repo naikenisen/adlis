@@ -8,8 +8,7 @@ from torchvision.transforms import v2
 import torchvision.transforms.v2.functional as TF
 
 class PadToSquare:
-    def __init__(self, fill=0, padding_mode='constant'):
-        self.fill = fill
+    def __init__(self, padding_mode='constant'):
         self.padding_mode = padding_mode
 
     def __call__(self, img):
@@ -19,7 +18,28 @@ class PadToSquare:
         pad_right = max_size - w - pad_left
         pad_top = (max_size - h) // 2
         pad_bottom = max_size - h - pad_top
-        return TF.pad(img, padding=[pad_left, pad_top, pad_right, pad_bottom], fill=self.fill, padding_mode=self.padding_mode)
+        
+        fill_val = 0
+        if self.padding_mode == 'constant':
+            if isinstance(img, torch.Tensor):
+                # Extraire les bords (haut, bas, gauche, droite)
+                top = img[:, 0:1, :]
+                bottom = img[:, -1:, :]
+                left = img[:, :, 0:1]
+                right = img[:, :, -1:]
+                
+                # Concaténer tous les pixels des bords
+                borders = torch.cat([
+                    top.reshape(img.shape[0], -1),
+                    bottom.reshape(img.shape[0], -1),
+                    left.reshape(img.shape[0], -1),
+                    right.reshape(img.shape[0], -1)
+                ], dim=1)
+                
+                # Utiliser la médiane pour être robuste aux artefacts ou bruits sur les bords
+                fill_val = borders.median(dim=1).values.tolist()
+
+        return TF.pad(img, padding=[pad_left, pad_top, pad_right, pad_bottom], fill=fill_val, padding_mode=self.padding_mode)
 
 # Transformations from train.py
 train_transforms = v2.Compose([
@@ -32,7 +52,7 @@ train_transforms = v2.Compose([
         v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05)
     ], p=0.8),
     v2.ToDtype(torch.float32, scale=True),
-    PadToSquare(fill=0, padding_mode='constant'),
+    PadToSquare(padding_mode='constant'),
     v2.Resize((224, 224)),
     v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
