@@ -64,7 +64,7 @@ train_transforms = v2.Compose([
     v2.RandomHorizontalFlip(),
     v2.RandomVerticalFlip(),
     v2.RandomApply([
-        v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05)
+        v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1)
     ], p=0.8),
     v2.ToDtype(torch.float32, scale=True),
     PadToSquare(padding_mode='constant'),
