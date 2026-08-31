@@ -7,7 +7,7 @@ from torchvision.transforms import v2
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.metrics import average_precision_score
+from sklearn.metrics import f1_score
 import torch.nn.functional as F
 import seaborn as sns
 
@@ -17,7 +17,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Hyperparameters
 batch_size = 64
 learning_rate = 0.001
-num_epochs = 200
+num_epochs = 100
 num_classes = 2
 
 # Define transforms for training and validation
@@ -92,11 +92,11 @@ criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=20, verbose=True)
 
-best_pr_auc = 0.0
+best_f1 = 0.0
 
 history_train_loss = []
 history_valid_loss = []
-history_valid_pr_auc = []
+history_valid_f1 = []
 
 # Training loop
 for epoch in range(num_epochs):
@@ -154,24 +154,25 @@ for epoch in range(num_epochs):
     labels_sc = 1 - np.array(all_labels)
     probs_sc = np.array(all_probs)
 
-    # Compute AUC-PR targeting SC
-    pr_auc = average_precision_score(labels_sc, probs_sc)
-    print(f'Validation Loss: {epoch_valid_loss:.4f} | AUC-PR (SC): {pr_auc:.4f}')
+    # Compute F1 score targeting SC
+    preds_sc = (probs_sc >= 0.5).astype(int)
+    f1 = f1_score(labels_sc, preds_sc)
+    print(f'Validation Loss: {epoch_valid_loss:.4f} | F1 Score (SC): {f1:.4f}')
     
     history_train_loss.append(epoch_train_loss)
     history_valid_loss.append(epoch_valid_loss)
-    history_valid_pr_auc.append(pr_auc)
+    history_valid_f1.append(f1)
 
-    # Save best model based on AUC-PR
-    if pr_auc > best_pr_auc:
-        best_pr_auc = pr_auc
+    # Save best model based on F1 Score
+    if f1 > best_f1:
+        best_f1 = f1
         import os
         ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         weights_dir = os.path.join(ROOT_DIR, 'weights')
         os.makedirs(weights_dir, exist_ok=True)
         
         torch.save(model.state_dict(), os.path.join(weights_dir, 'classification.pth'))
-        print(f'New best model saved based on AUC-PR: {pr_auc:.4f}')
+        print(f'New best model saved based on F1 Score: {f1:.4f}')
 
     # Step the scheduler based on the validation Loss
     scheduler.step(epoch_valid_loss)
