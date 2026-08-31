@@ -11,6 +11,8 @@ from sklearn.metrics import f1_score
 import torch.nn.functional as F
 import seaborn as sns
 
+import torchvision.transforms.v2.functional as TF
+
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -20,23 +22,52 @@ learning_rate = 0.001
 num_epochs = 100
 num_classes = 2
 
-# Define transforms for training and validation
+class PadToSquare:
+    def __init__(self, padding_mode='constant'):
+        self.padding_mode = padding_mode
+
+    def __call__(self, img):
+        h, w = TF.get_size(img)
+        max_size = max(h, w)
+        pad_left = (max_size - w) // 2
+        pad_right = max_size - w - pad_left
+        pad_top = (max_size - h) // 2
+        pad_bottom = max_size - h - pad_top
+        
+        fill_val = 0
+        if self.padding_mode == 'constant':
+            if isinstance(img, torch.Tensor):
+                # Extraire les bords (haut, bas, gauche, droite)
+                top = img[:, 0:1, :]
+                bottom = img[:, -1:, :]
+                left = img[:, :, 0:1]
+                right = img[:, :, -1:]
+                
+                # Concaténer tous les pixels des bords
+                borders = torch.cat([
+                    top.reshape(img.shape[0], -1),
+                    bottom.reshape(img.shape[0], -1),
+                    left.reshape(img.shape[0], -1),
+                    right.reshape(img.shape[0], -1)
+                ], dim=1)
+                
+                # Utiliser la médiane pour être robuste aux artefacts ou bruits sur les bords
+                fill_val = borders.median(dim=1).values.tolist()
+
+        return TF.pad(img, padding=[pad_left, pad_top, pad_right, pad_bottom], fill=fill_val, padding_mode=self.padding_mode)
+
+# Transformations from train.py
 train_transforms = v2.Compose([
     v2.ToImage(),
-    v2.ToDtype(torch.uint8, scale=True),  # optional, most input are already uint8 at this point
+    v2.ToDtype(torch.uint8, scale=True), 
 
     v2.RandomHorizontalFlip(),
     v2.RandomVerticalFlip(),
-    v2.RandomAffine(
-            degrees=180, 
-            translate=(0.1, 0.1), 
-            scale=(0.9, 1.1)
-    ),
     v2.RandomApply([
         v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05)
     ], p=0.8),
-    v2.RandomRotation(90),
     v2.ToDtype(torch.float32, scale=True),
+    PadToSquare(padding_mode='constant'),
     v2.Resize((224, 224)),
     v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
