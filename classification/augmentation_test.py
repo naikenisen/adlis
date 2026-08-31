@@ -49,7 +49,7 @@ train_transforms = v2.Compose([
     v2.RandomHorizontalFlip(),
     v2.RandomVerticalFlip(),
     v2.RandomApply([
-        v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05)
+        v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1)
     ], p=0.8),
     v2.ToDtype(torch.float32, scale=True),
     PadToSquare(padding_mode='constant'),
@@ -69,7 +69,7 @@ def unnormalize(tensor):
 
 def main():
     # Load dataset without transforms to get the raw PIL Images
-    dataset_dir = '/home/naiken/coding/adlis/dataset/classification_set/test'
+    dataset_dir = '/home/naiken/coding/adlis/dataset/classification_set/test/SC'
     dataset = datasets.ImageFolder(root=dataset_dir)
 
     # Pick 10 random images
@@ -82,7 +82,6 @@ def main():
 
     for i, idx in enumerate(indices):
         pil_img, label = dataset[idx]
-        class_name = dataset.classes[label]
 
         # Apply transformations
         aug_tensor = train_transforms(pil_img)
@@ -90,12 +89,10 @@ def main():
 
         # Show Original
         axes[i, 0].imshow(pil_img)
-        axes[i, 0].set_title(f'Original - {class_name}')
         axes[i, 0].axis('off')
 
         # Show Augmented
         axes[i, 1].imshow(aug_img)
-        axes[i, 1].set_title(f'Augmented - {class_name}')
         axes[i, 1].axis('off')
 
     plt.tight_layout()
