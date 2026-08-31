@@ -69,12 +69,19 @@ def unnormalize(tensor):
 
 def main():
     # Load dataset without transforms to get the raw PIL Images
-    dataset_dir = '/home/naiken/coding/adlis/dataset/classification_set/test/SC'
+    dataset_dir = '/home/naiken/coding/adlis/dataset/classification_set/test'
     dataset = datasets.ImageFolder(root=dataset_dir)
 
-    # Pick 10 random images
-    num_images = 10
-    indices = random.sample(range(len(dataset)), num_images)
+    # Filtrer pour ne garder que la classe 'SC'
+    if 'SC' in dataset.class_to_idx:
+        sc_class_idx = dataset.class_to_idx['SC']
+        sc_indices = [i for i, (_, label) in enumerate(dataset.samples) if label == sc_class_idx]
+    else:
+        raise ValueError("La classe 'SC' n'a pas été trouvée dans le dataset.")
+
+    # Pick 10 random images parmis la classe SC
+    num_images = min(10, len(sc_indices))
+    indices = random.sample(sc_indices, num_images)
 
     # Setup matplotlib figure
     fig, axes = plt.subplots(num_images, 2, figsize=(8, 3 * num_images))
