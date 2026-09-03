@@ -8,7 +8,11 @@ from torchvision.transforms import v2
 from torchvision.ops import nms
 from PIL import Image
 from tqdm import tqdm
-from tabulate import tabulate
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import rcParams
+import seaborn as sns
+from sklearn.metrics import confusion_matrix, accuracy_score
 
 # Configuration des chemins
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,6 +27,7 @@ METADATA_PATH = os.path.join(ROOT_DIR, "dataset", "metadata.csv")
 SPLIT_PATH = os.path.join(ROOT_DIR, "dataset", "split.csv")
 DETECTION_WEIGHTS = os.path.join(ROOT_DIR, "weights", "detection.pth")
 CLASSIFICATION_WEIGHTS = os.path.join(ROOT_DIR, "weights", "classification.pth")
+OUTPUT_FIGURE_PATH = os.path.join(ROOT_DIR, "figures_scripts", "figure3.png")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -66,6 +71,32 @@ def parse_sidero_count(val):
     except ValueError:
         return None
 
+def ratio_to_category(sc, sn):
+    if sn == 0:
+        ratio = 100.0 if sc > 0 else 0.0
+    else:
+        ratio = (sc / sn) * 100.0
+        
+    if ratio < 5:
+        return '<5%'
+    elif 5 <= ratio <= 14:
+        return 'entre 5 et 14 %'
+    else:
+        return '>15%'
+
+def row_normalize(cm: np.ndarray) -> np.ndarray:
+    row_sum = cm.sum(axis=1, keepdims=True)
+    row_sum[row_sum == 0] = 1
+    return cm / row_sum
+
+def make_annotation(cm: np.ndarray) -> np.ndarray:
+    pct = row_normalize(cm)
+    annot = np.empty_like(cm, dtype=object)
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            annot[i, j] = f"{int(cm[i, j])}\n({pct[i, j]*100:.0f}%)"
+    return annot
+
 def main():
     print(f"Utilisation du device : {device}")
     
@@ -73,10 +104,10 @@ def main():
     df_meta = pd.read_csv(METADATA_PATH)
     df_split = pd.read_csv(SPLIT_PATH)
     
-    # Fusionner pour avoir split et category pour chaque image
-    df = pd.merge(df_split, df_meta[['filename', 'sidero_count']], on='filename', how='left')
+    # Fusionner pour avoir split, patient (directory_name) et category pour chaque image
+    df = pd.merge(df_split, df_meta[['filename', 'directory_name', 'sidero_count']], on='filename', how='left')
     df['category'] = df['sidero_count'].apply(parse_sidero_count)
-    df = df.dropna(subset=['category'])
+    df = df.dropna(subset=['category', 'directory_name'])
     
     # Filtrer les images qui existent physiquement
     valid_images = []
@@ -88,11 +119,8 @@ def main():
     
     print(f"Nombre total d'images à traiter : {len(df)}")
     
-    # Initialiser les compteurs
-    # Structure: dict[split][category] = {'SC': 0, 'SN': 0}
-    splits = ['train', 'valid', 'test']
-    categories = ['<5%', 'entre 5 et 14 %', '>15%']
-    results = {s: {c: {'SC': 0, 'SN': 0} for c in categories} for s in splits}
+    # Dictionnaire pour stocker les prédictions par patient
+    patient_results = {}
     
     # Chargement des modèles
     print("Chargement des modèles...")
@@ -144,77 +172,148 @@ def main():
     with torch.no_grad():
         for _, row in tqdm(df.iterrows(), total=len(df), desc="Inférence"):
             split = row['split']
+            patient = row['directory_name']
             cat = row['category']
             
-            # Au cas où le split aurait une casse inattendue ou ne serait pas dans nos clés prévues
-            if split not in splits:
-                if split not in results:
-                    results[split] = {c: {'SC': 0, 'SN': 0} for c in categories}
-            
+            if split not in patient_results:
+                patient_results[split] = {}
+            if patient not in patient_results[split]:
+                patient_results[split][patient] = {'SC': 0, 'SN': 0, 'true_cat': cat}
+                
             img_path = os.path.join(IMAGES_DIR, row['filename'])
             image = Image.open(img_path).convert("RGB")
             
-            # Détection
             img_tensor = det_transform(image).unsqueeze(0).to(device)
             preds = det_model(img_tensor)[0]
             
             boxes = preds["boxes"]
             scores = preds["scores"]
             
-            # Seuil de détection (par défaut 0.5 dans app.py)
             mask = scores > 0.5
             boxes = boxes[mask]
             scores = scores[mask]
             
-            # NMS
             keep = nms(boxes, scores, iou_threshold=0.4)
             boxes = boxes[keep]
             
             if len(boxes) == 0:
                 continue
             
-            # Extraire les crops pour la classification
             crops = []
             for box in boxes:
                 box_np = box.cpu().numpy()
                 crop = image.crop(box_np)
                 crops.append(cls_transform(crop))
             
-            # Batcher la classification
             crops_tensor = torch.stack(crops).to(device)
             
-            # Prédiction par batch (pour éviter OOM si trop de bounding boxes, on peut subdiviser, 
-            # mais généralement < 100 par image donc ça passe)
             cls_outputs = cls_model(crops_tensor)
             _, predicted = torch.max(cls_outputs, 1)
             
-            # 0 -> SC, 1 -> SN
             sc_count = (predicted == 0).sum().item()
             sn_count = (predicted == 1).sum().item()
             
-            results[split][cat]['SC'] += sc_count
-            results[split][cat]['SN'] += sn_count
+            patient_results[split][patient]['SC'] += sc_count
+            patient_results[split][patient]['SN'] += sn_count
 
-    # Génération du tableau récapitulatif
-    table_data = []
+    print("Génération de la figure...")
+    categories = ['<5%', 'entre 5 et 14 %', '>15%']
+    splits = ['train', 'valid', 'test']
+    display_names = {"train": "Train", "valid": "Valid", "test": "Test"}
+    
+    y_trues = {s: [] for s in splits}
+    y_preds = {s: [] for s in splits}
+    
     for split in splits:
-        if split not in results:
+        if split in patient_results:
+            for patient, data in patient_results[split].items():
+                pred_cat = ratio_to_category(data['SC'], data['SN'])
+                y_trues[split].append(data['true_cat'])
+                y_preds[split].append(pred_cat)
+
+    # Style pour matplotlib (inspiré de figure2.py)
+    rcParams.update({
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
+        'font.size': 8,
+        'axes.labelsize': 8,
+        'axes.titlesize': 8,
+        'xtick.labelsize': 7,
+        'ytick.labelsize': 7,
+        'axes.spines.top': False,
+        'axes.spines.right': False,
+        'axes.linewidth': 0.6,
+        'xtick.direction': 'out',
+        'ytick.direction': 'out',
+        'xtick.major.size': 3,
+        'ytick.major.size': 3,
+        'figure.dpi': 300,
+        'savefig.dpi': 300
+    })
+    sns.set_theme(context='paper', style='ticks')
+
+    mm = 1/25.4
+    fig_w, fig_h = 200*mm, 70*mm  
+    fig = plt.figure(figsize=(fig_w, fig_h))
+    gs = fig.add_gridspec(1, 3, wspace=0.6, left=0.08, right=0.90, top=0.85, bottom=0.15)
+
+    fig.suptitle("Évaluation de la classification des patients (Calcul vs Vérité terrain)", 
+                 fontsize=10, fontweight='bold', y=1.05)
+
+    panel_letters = ['A', 'B', 'C']
+    mappable_for_cbar = None
+    axes_top = []
+
+    for col, name in enumerate(splits):
+        ax = fig.add_subplot(gs[0, col])
+        axes_top.append(ax)
+        
+        if len(y_trues[name]) == 0:
+            ax.set_title(f"{display_names[name]} Set (No Data)", pad=6, fontweight='bold', fontsize=9)
+            ax.axis('off')
             continue
-        for cat in categories:
-            sc = results[split][cat]['SC']
-            sn = results[split][cat]['SN']
-            if sn == 0:
-                ratio = "N/A"
-            else:
-                ratio = f"{(sc / sn) * 100:.2f} %"
-            
-            table_data.append([split, cat, sc, sn, ratio])
-            
-    print("\n" + "="*50)
-    print("RÉSULTATS DE CLASSIFICATION SC / SN")
-    print("="*50)
-    headers = ["Split", "Catégorie", "Somme SC", "Somme SN", "Ratio (SC / SN * 100)"]
-    print(tabulate(table_data, headers=headers, tablefmt="grid"))
+
+        cm = confusion_matrix(y_trues[name], y_preds[name], labels=categories)
+        pct = row_normalize(cm)
+        annot = make_annotation(cm)
+        
+        hm = sns.heatmap(
+            pct,
+            annot=annot,
+            fmt='',
+            cmap='Blues',
+            vmin=0, vmax=1,
+            ax=ax,
+            cbar=False,
+            square=True,
+            annot_kws={"size": 5.5}
+        )
+        
+        ax.set_title(f"{display_names[name]} Set", pad=6, fontweight='bold', fontsize=9)
+        ax.set_xlabel('Prédiction Modèle', fontsize=8)
+        ax.set_ylabel('Vérité Terrain (Sidero Count)', fontsize=8)
+        ax.set_xticklabels(categories, fontsize=6, rotation=45, ha='right')
+        ax.set_yticklabels(categories, rotation=0, fontsize=6, va='center')
+        
+        acc = accuracy_score(y_trues[name], y_preds[name])
+        metrics_text = f"Accuracy {acc:.2f} ({len(y_trues[name])} patients)"
+        ax.text(0.5, -0.45, metrics_text, transform=ax.transAxes, 
+                ha='center', va='top', fontsize=6)
+        
+        ax.text(-0.35, 1.08, panel_letters[col], transform=ax.transAxes, 
+                fontsize=10, fontweight='bold', va='bottom')
+                
+        if col == 2 or mappable_for_cbar is None:
+            mappable_for_cbar = ax.collections[0]
+
+    if mappable_for_cbar is not None:
+        cbar = fig.colorbar(
+            mappable_for_cbar, ax=axes_top, location='right', fraction=0.03, pad=0.02
+        )
+        cbar.set_label('Proportion normalisée par ligne')
+
+    plt.savefig(OUTPUT_FIGURE_PATH, bbox_inches='tight', dpi=300)
+    print(f"\nFigure sauvegardée avec succès : {OUTPUT_FIGURE_PATH}")
 
 if __name__ == "__main__":
     main()
