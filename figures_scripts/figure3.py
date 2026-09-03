@@ -281,10 +281,6 @@ def main():
     fig_w, fig_h = 200*mm, 70*mm  
     fig = plt.figure(figsize=(fig_w, fig_h))
     gs = fig.add_gridspec(1, 3, wspace=0.6, left=0.08, right=0.90, top=0.85, bottom=0.15)
-
-    fig.suptitle("Évaluation de la classification des patients (Calcul vs Vérité terrain annotée)", 
-                 fontsize=10, fontweight='bold', y=1.05)
-
     panel_letters = ['A', 'B', 'C']
     mappable_for_cbar = None
     axes_top = []
@@ -315,8 +311,8 @@ def main():
         )
         
         ax.set_title(f"{display_names[name]} Set", pad=6, fontweight='bold', fontsize=9)
-        ax.set_xlabel('Prédiction Modèle', fontsize=8)
-        ax.set_ylabel('Vérité Terrain (Annotations)', fontsize=8)
+        ax.set_xlabel('predictions', fontsize=6)
+        ax.set_ylabel('ground truth', fontsize=6)
         ax.set_xticklabels(categories, fontsize=6, rotation=45, ha='right')
         ax.set_yticklabels(categories, rotation=0, fontsize=6, va='center')
         
