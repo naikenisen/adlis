@@ -29,7 +29,7 @@ METADATA_PATH = os.path.join(ROOT_DIR, "dataset", "metadata.csv")
 SPLIT_PATH = os.path.join(ROOT_DIR, "dataset", "split.csv")
 DETECTION_WEIGHTS = os.path.join(ROOT_DIR, "weights", "detection.pth")
 CLASSIFICATION_WEIGHTS = os.path.join(ROOT_DIR, "weights", "classification.pth")
-OUTPUT_FIGURE_PATH = os.path.join(ROOT_DIR, "figures_scripts", "figure3bis.png")
+OUTPUT_FIGURE_PATH = os.path.join(ROOT_DIR, "figures_export", "figure3.png")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -89,7 +89,7 @@ def get_xml_counts(xml_path):
                     sn_count += 1
         return sc_count, sn_count
     except Exception as e:
-        print(f"Erreur lors de la lecture de {xml_path}: {e}")
+        print(f"Error reading {xml_path}: {e}")
         return 0, 0
 
 def row_normalize(cm: np.ndarray) -> np.ndarray:
@@ -106,7 +106,7 @@ def make_annotation(cm: np.ndarray) -> np.ndarray:
     return annot
 
 def main():
-    print(f"Utilisation du device : {device}")
+    print(f"Using device: {device}")
     
     # Chargement des métadonnées
     df_meta = pd.read_csv(METADATA_PATH)
@@ -124,10 +124,10 @@ def main():
             valid_images.append(row)
     df = pd.DataFrame(valid_images)
     
-    print(f"Nombre total d'images à traiter : {len(df)}")
+    print(f"Total number of images to process: {len(df)}")
     
     # Calculer le ground truth (annoté) par patient
-    print("Calcul des annotations terrain par patient...")
+    print("Computing ground truth annotations per patient...")
     patient_true_counts = {}
     for _, row in df.iterrows():
         patient = row['directory_name']
@@ -146,7 +146,7 @@ def main():
     patient_results = {}
     
     # Chargement des modèles
-    print("Chargement des modèles...")
+    print("Loading models...")
     det_model = load_fasterrcnn_model(DETECTION_WEIGHTS, device)
     cls_model = load_classifier(CLASSIFICATION_WEIGHTS, device)
     
@@ -191,9 +191,9 @@ def main():
         v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
     
-    print("Début du traitement des images...")
+    print("Starting image processing...")
     with torch.no_grad():
-        for _, row in tqdm(df.iterrows(), total=len(df), desc="Inférence"):
+        for _, row in tqdm(df.iterrows(), total=len(df), desc="Inference"):
             split = row['split']
             patient = row['directory_name']
             
@@ -241,13 +241,22 @@ def main():
             patient_results[split][patient]['SC'] += sc_count
             patient_results[split][patient]['SN'] += sn_count
 
-    print("Génération de la figure...")
-    categories = ['<5%', 'entre 5 et 14 %', '>15%']
+    print("Generating figure...")
+    display_categories = ['<5%', '[5;14]', '≥15%']
+    internal_categories = ['<5%', 'entre 5 et 14 %', '>15%']
     splits = ['train', 'valid', 'test']
     display_names = {"train": "Train", "valid": "Valid", "test": "Test"}
     
     y_trues = {s: [] for s in splits}
     y_preds = {s: [] for s in splits}
+    
+    true_ratios = {s: [] for s in splits}
+    pred_ratios = {s: [] for s in splits}
+    
+    def calc_ratio(sc, sn):
+        if sn == 0:
+            return 100.0 if sc > 0 else 0.0
+        return (sc / sn) * 100.0
     
     for split in splits:
         if split in patient_results:
@@ -255,6 +264,12 @@ def main():
                 pred_cat = ratio_to_category(data['SC'], data['SN'])
                 y_trues[split].append(data['true_cat'])
                 y_preds[split].append(pred_cat)
+                
+                # Ratios quantitatifs
+                true_sc = patient_true_counts[patient]['true_SC']
+                true_sn = patient_true_counts[patient]['true_SN']
+                true_ratios[split].append(calc_ratio(true_sc, true_sn))
+                pred_ratios[split].append(calc_ratio(data['SC'], data['SN']))
 
     # Style pour matplotlib
     rcParams.update({
@@ -278,23 +293,25 @@ def main():
     sns.set_theme(context='paper', style='ticks')
 
     mm = 1/25.4
-    fig_w, fig_h = 200*mm, 70*mm  
+    fig_w, fig_h = 200*mm, 200*mm  
     fig = plt.figure(figsize=(fig_w, fig_h))
-    gs = fig.add_gridspec(1, 3, wspace=0.6, left=0.08, right=0.90, top=0.85, bottom=0.15)
-    panel_letters = ['A', 'B', 'C']
+    gs = fig.add_gridspec(3, 3, wspace=0.5, hspace=0.6, left=0.08, right=0.90, top=0.95, bottom=0.08)
+
+    panel_letters = [['A', 'B', 'C'], ['D', 'E', 'F'], ['G', 'H', 'I']]
     mappable_for_cbar = None
     axes_top = []
 
     for col, name in enumerate(splits):
-        ax = fig.add_subplot(gs[0, col])
-        axes_top.append(ax)
+        # 1. Matrice de confusion
+        ax_cm = fig.add_subplot(gs[0, col])
+        axes_top.append(ax_cm)
         
         if len(y_trues[name]) == 0:
-            ax.set_title(f"{display_names[name]} Set (No Data)", pad=6, fontweight='bold', fontsize=9)
-            ax.axis('off')
+            ax_cm.set_title(f"{display_names[name]} Set (No Data)", pad=6, fontweight='bold', fontsize=9)
+            ax_cm.axis('off')
             continue
 
-        cm = confusion_matrix(y_trues[name], y_preds[name], labels=categories)
+        cm = confusion_matrix(y_trues[name], y_preds[name], labels=internal_categories)
         pct = row_normalize(cm)
         annot = make_annotation(cm)
         
@@ -304,37 +321,80 @@ def main():
             fmt='',
             cmap='Blues',
             vmin=0, vmax=1,
-            ax=ax,
+            ax=ax_cm,
             cbar=False,
             square=True,
             annot_kws={"size": 5.5}
         )
         
-        ax.set_title(f"{display_names[name]} Set", pad=6, fontweight='bold', fontsize=9)
-        ax.set_xlabel('predictions', fontsize=6)
-        ax.set_ylabel('ground truth', fontsize=6)
-        ax.set_xticklabels(categories, fontsize=6, rotation=45, ha='right')
-        ax.set_yticklabels(categories, rotation=0, fontsize=6, va='center')
+        ax_cm.set_title(f"{display_names[name]} Set", pad=15, fontweight='bold', fontsize=9)
+        ax_cm.set_xlabel('Predictions (%)', fontsize=8)
+        ax_cm.set_ylabel('Ground truth (%)', fontsize=8)
+        ax_cm.set_xticklabels(display_categories, fontsize=6, rotation=45, ha='right')
+        ax_cm.set_yticklabels(display_categories, rotation=0, fontsize=6, va='center')
         
         acc = accuracy_score(y_trues[name], y_preds[name])
         metrics_text = f"Accuracy {acc:.2f} ({len(y_trues[name])} patients)"
-        ax.text(0.5, -0.45, metrics_text, transform=ax.transAxes, 
-                ha='center', va='top', fontsize=6)
+        ax_cm.text(0.5, 1.05, metrics_text, transform=ax_cm.transAxes, 
+                ha='center', va='bottom', fontsize=7)
         
-        ax.text(-0.35, 1.08, panel_letters[col], transform=ax.transAxes, 
+        ax_cm.text(-0.35, 1.15, panel_letters[0][col], transform=ax_cm.transAxes, 
                 fontsize=10, fontweight='bold', va='bottom')
                 
         if col == 2 or mappable_for_cbar is None:
-            mappable_for_cbar = ax.collections[0]
+            mappable_for_cbar = ax_cm.collections[0]
+
+        # 2. Droite de régression (Scatter plot % pred vs % GT)
+        ax_reg = fig.add_subplot(gs[1, col])
+        tr = np.array(true_ratios[name])
+        pr = np.array(pred_ratios[name])
+        
+        if len(tr) > 0:
+            ax_reg.scatter(pr, tr, alpha=0.7, s=15, color='#1f77b4')
+            
+            # Droite de régression
+            if len(pr) > 1:
+                m, b = np.polyfit(pr, tr, 1)
+                x_range = np.linspace(min(pr), max(pr), 100)
+                ax_reg.plot(x_range, m*x_range + b, color='red', linestyle='--', linewidth=1, label=f'Fit: y={m:.2f}x+{b:.2f}')
+            
+            # Ligne y=x
+            max_val = max(np.max(tr), np.max(pr))
+            ax_reg.plot([0, max_val], [0, max_val], color='gray', linestyle=':', linewidth=1, label='y=x')
+            
+            ax_reg.set_xlabel('Predictions (%)', fontsize=8)
+            ax_reg.set_ylabel('Ground truth (%)', fontsize=8)
+        
+        ax_reg.text(-0.35, 1.05, panel_letters[1][col], transform=ax_reg.transAxes, 
+                fontsize=10, fontweight='bold', va='bottom')
+
+        # 3. Bland-Altman Plot
+        ax_ba = fig.add_subplot(gs[2, col])
+        if len(tr) > 0:
+            mean_vals = (tr + pr) / 2
+            diff_vals = pr - tr
+            md = np.mean(diff_vals)
+            sd = np.std(diff_vals, axis=0) if len(diff_vals) > 1 else 0
+            
+            ax_ba.scatter(mean_vals, diff_vals, alpha=0.7, s=15, color='#2ca02c')
+            ax_ba.axhline(md, color='red', linestyle='-', linewidth=1, label=f'Mean: {md:.2f}')
+            if sd > 0:
+                ax_ba.axhline(md + 1.96*sd, color='gray', linestyle='--', linewidth=1, label=f'+1.96 SD: {md+1.96*sd:.2f}')
+                ax_ba.axhline(md - 1.96*sd, color='gray', linestyle='--', linewidth=1, label=f'-1.96 SD: {md-1.96*sd:.2f}')
+            
+            ax_ba.set_xlabel('Mean (Pred, GT) (%)', fontsize=8)
+            ax_ba.set_ylabel('Diff (Pred - GT) (%)', fontsize=8)
+            
+        ax_ba.text(-0.35, 1.05, panel_letters[2][col], transform=ax_ba.transAxes, 
+                fontsize=10, fontweight='bold', va='bottom')
 
     if mappable_for_cbar is not None:
         cbar = fig.colorbar(
             mappable_for_cbar, ax=axes_top, location='right', fraction=0.03, pad=0.02
         )
-        cbar.set_label('Proportion normalisée par ligne')
 
     plt.savefig(OUTPUT_FIGURE_PATH, bbox_inches='tight', dpi=300)
-    print(f"\nFigure sauvegardée avec succès : {OUTPUT_FIGURE_PATH}")
+    print(f"\nFigure successfully saved: {OUTPUT_FIGURE_PATH}")
 
 if __name__ == "__main__":
     main()
