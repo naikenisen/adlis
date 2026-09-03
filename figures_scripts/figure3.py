@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from matplotlib import rcParams
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, accuracy_score
+import xml.etree.ElementTree as ET
 
 # Configuration des chemins
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,11 +24,12 @@ sys.path.append(ROOT_DIR)
 from detection.model import create_model as create_fasterrcnn_model
 
 IMAGES_DIR = os.path.join(ROOT_DIR, "dataset", "images")
+ANNOTATIONS_DIR = os.path.join(ROOT_DIR, "dataset", "annotations")
 METADATA_PATH = os.path.join(ROOT_DIR, "dataset", "metadata.csv")
 SPLIT_PATH = os.path.join(ROOT_DIR, "dataset", "split.csv")
 DETECTION_WEIGHTS = os.path.join(ROOT_DIR, "weights", "detection.pth")
 CLASSIFICATION_WEIGHTS = os.path.join(ROOT_DIR, "weights", "classification.pth")
-OUTPUT_FIGURE_PATH = os.path.join(ROOT_DIR, "figures_scripts", "figure3.png")
+OUTPUT_FIGURE_PATH = os.path.join(ROOT_DIR, "figures_scripts", "figure3bis.png")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -56,21 +58,6 @@ def load_classifier(model_path, device):
     model.eval().to(device)
     return model
 
-def parse_sidero_count(val):
-    if pd.isna(val):
-        return None
-    val_str = str(val).replace('%', '').replace(' ', '').strip()
-    try:
-        num = int(val_str)
-        if num < 5:
-            return '<5%'
-        elif 5 <= num <= 14:
-            return 'entre 5 et 14 %'
-        else:
-            return '>15%'
-    except ValueError:
-        return None
-
 def ratio_to_category(sc, sn):
     if sn == 0:
         ratio = 100.0 if sc > 0 else 0.0
@@ -83,6 +70,27 @@ def ratio_to_category(sc, sn):
         return 'entre 5 et 14 %'
     else:
         return '>15%'
+
+def get_xml_counts(xml_path):
+    if not os.path.exists(xml_path):
+        return 0, 0
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        sc_count = 0
+        sn_count = 0
+        for obj in root.findall('object'):
+            name_node = obj.find('name')
+            if name_node is not None:
+                name = name_node.text
+                if name == 'SC':
+                    sc_count += 1
+                elif name == 'SN':
+                    sn_count += 1
+        return sc_count, sn_count
+    except Exception as e:
+        print(f"Erreur lors de la lecture de {xml_path}: {e}")
+        return 0, 0
 
 def row_normalize(cm: np.ndarray) -> np.ndarray:
     row_sum = cm.sum(axis=1, keepdims=True)
@@ -104,10 +112,9 @@ def main():
     df_meta = pd.read_csv(METADATA_PATH)
     df_split = pd.read_csv(SPLIT_PATH)
     
-    # Fusionner pour avoir split, patient (directory_name) et category pour chaque image
-    df = pd.merge(df_split, df_meta[['filename', 'directory_name', 'sidero_count']], on='filename', how='left')
-    df['category'] = df['sidero_count'].apply(parse_sidero_count)
-    df = df.dropna(subset=['category', 'directory_name'])
+    # Fusionner pour avoir split et patient (directory_name) pour chaque image
+    df = pd.merge(df_split, df_meta[['filename', 'directory_name']], on='filename', how='left')
+    df = df.dropna(subset=['directory_name'])
     
     # Filtrer les images qui existent physiquement
     valid_images = []
@@ -118,6 +125,22 @@ def main():
     df = pd.DataFrame(valid_images)
     
     print(f"Nombre total d'images à traiter : {len(df)}")
+    
+    # Calculer le ground truth (annoté) par patient
+    print("Calcul des annotations terrain par patient...")
+    patient_true_counts = {}
+    for _, row in df.iterrows():
+        patient = row['directory_name']
+        filename = row['filename']
+        base_name = os.path.splitext(filename)[0]
+        xml_path = os.path.join(ANNOTATIONS_DIR, f"{base_name}.xml")
+        
+        if patient not in patient_true_counts:
+            patient_true_counts[patient] = {'true_SC': 0, 'true_SN': 0}
+            
+        sc, sn = get_xml_counts(xml_path)
+        patient_true_counts[patient]['true_SC'] += sc
+        patient_true_counts[patient]['true_SN'] += sn
     
     # Dictionnaire pour stocker les prédictions par patient
     patient_results = {}
@@ -173,12 +196,14 @@ def main():
         for _, row in tqdm(df.iterrows(), total=len(df), desc="Inférence"):
             split = row['split']
             patient = row['directory_name']
-            cat = row['category']
             
             if split not in patient_results:
                 patient_results[split] = {}
             if patient not in patient_results[split]:
-                patient_results[split][patient] = {'SC': 0, 'SN': 0, 'true_cat': cat}
+                true_sc = patient_true_counts[patient]['true_SC']
+                true_sn = patient_true_counts[patient]['true_SN']
+                true_cat = ratio_to_category(true_sc, true_sn)
+                patient_results[split][patient] = {'SC': 0, 'SN': 0, 'true_cat': true_cat}
                 
             img_path = os.path.join(IMAGES_DIR, row['filename'])
             image = Image.open(img_path).convert("RGB")
@@ -231,7 +256,7 @@ def main():
                 y_trues[split].append(data['true_cat'])
                 y_preds[split].append(pred_cat)
 
-    # Style pour matplotlib (inspiré de figure2.py)
+    # Style pour matplotlib
     rcParams.update({
         'font.family': 'sans-serif',
         'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
@@ -257,7 +282,7 @@ def main():
     fig = plt.figure(figsize=(fig_w, fig_h))
     gs = fig.add_gridspec(1, 3, wspace=0.6, left=0.08, right=0.90, top=0.85, bottom=0.15)
 
-    fig.suptitle("Évaluation de la classification des patients (Calcul vs Vérité terrain)", 
+    fig.suptitle("Évaluation de la classification des patients (Calcul vs Vérité terrain annotée)", 
                  fontsize=10, fontweight='bold', y=1.05)
 
     panel_letters = ['A', 'B', 'C']
@@ -291,7 +316,7 @@ def main():
         
         ax.set_title(f"{display_names[name]} Set", pad=6, fontweight='bold', fontsize=9)
         ax.set_xlabel('Prédiction Modèle', fontsize=8)
-        ax.set_ylabel('Vérité Terrain (Sidero Count)', fontsize=8)
+        ax.set_ylabel('Vérité Terrain (Annotations)', fontsize=8)
         ax.set_xticklabels(categories, fontsize=6, rotation=45, ha='right')
         ax.set_yticklabels(categories, rotation=0, fontsize=6, va='center')
         
