@@ -27,6 +27,7 @@ IMAGES_DIR = os.path.join(ROOT_DIR, "dataset", "images")
 ANNOTATIONS_DIR = os.path.join(ROOT_DIR, "dataset", "annotations")
 METADATA_PATH = os.path.join(ROOT_DIR, "dataset", "metadata.csv")
 SPLIT_PATH = os.path.join(ROOT_DIR, "dataset", "split.csv")
+SF3B1_PATH = os.path.join(ROOT_DIR, "dataset", "sf3b1.csv")
 DETECTION_WEIGHTS = os.path.join(ROOT_DIR, "weights", "detection.pth")
 CLASSIFICATION_WEIGHTS = os.path.join(ROOT_DIR, "weights", "classification.pth")
 OUTPUT_FIGURE_PATH = os.path.join(ROOT_DIR, "figures_export", "figure3.png")
@@ -111,6 +112,10 @@ def main():
     # Chargement des métadonnées
     df_meta = pd.read_csv(METADATA_PATH)
     df_split = pd.read_csv(SPLIT_PATH)
+    
+    df_sf3b1 = pd.read_csv(SF3B1_PATH)
+    df_sf3b1.columns = df_sf3b1.columns.str.strip()
+    sf3b1_dict = {str(k): str(v).strip() for k, v in df_sf3b1.set_index('directory_name')['SF3B1'].to_dict().items()}
     
     # Fusionner pour avoir split et patient (directory_name) pour chaque image
     df = pd.merge(df_split, df_meta[['filename', 'directory_name']], on='filename', how='left')
@@ -252,6 +257,7 @@ def main():
     
     true_ratios = {s: [] for s in splits}
     pred_ratios = {s: [] for s in splits}
+    pt_status = {s: [] for s in splits}
     
     def calc_ratio(sc, sn):
         if sn == 0:
@@ -270,6 +276,12 @@ def main():
                 true_sn = patient_true_counts[patient]['true_SN']
                 true_ratios[split].append(calc_ratio(true_sc, true_sn))
                 pred_ratios[split].append(calc_ratio(data['SC'], data['SN']))
+                
+                # SF3B1 status
+                status = sf3b1_dict.get(str(int(patient)) if isinstance(patient, float) and patient.is_integer() else str(patient), 'NR')
+                if status not in ['mute', 'non_mute']:
+                    status = 'NR'
+                pt_status[split].append(status)
 
     # Style pour matplotlib
     rcParams.update({
@@ -295,7 +307,7 @@ def main():
     mm = 1/25.4
     fig_w, fig_h = 200*mm, 200*mm  
     fig = plt.figure(figsize=(fig_w, fig_h))
-    gs = fig.add_gridspec(3, 3, wspace=0.5, hspace=0.6, left=0.08, right=0.90, top=0.95, bottom=0.08)
+    gs = fig.add_gridspec(3, 3, wspace=0.5, hspace=0.6, left=0.08, right=0.90, top=0.95, bottom=0.15)
 
     panel_letters = [['A', 'B', 'C'], ['D', 'E', 'F'], ['G', 'H', 'I']]
     mappable_for_cbar = None
@@ -350,17 +362,48 @@ def main():
         pr = np.array(pred_ratios[name])
         
         if len(tr) > 0:
-            ax_reg.scatter(pr, tr, alpha=0.7, s=15, color='#1f77b4')
+            st_arr = np.array(pt_status[name])
+            
+            idx = st_arr == 'mute'
+            if np.any(idx):
+                ax_reg.scatter(pr[idx], tr[idx], alpha=0.8, s=25, c='#cc0000', marker='^')
+            
+            idx = st_arr == 'non_mute'
+            if np.any(idx):
+                ax_reg.scatter(pr[idx], tr[idx], alpha=0.8, s=20, c='#0000cc', marker='s')
+                
+            idx = st_arr == 'NR'
+            if np.any(idx):
+                ax_reg.scatter(pr[idx], tr[idx], alpha=0.8, s=20, c='#666666', marker='o')
+            
+            # Limites actuelles (définies par les points)
+            xlims = ax_reg.get_xlim()
+            ylims = ax_reg.get_ylim()
             
             # Droite de régression
             if len(pr) > 1:
                 m, b = np.polyfit(pr, tr, 1)
-                x_range = np.linspace(min(pr), max(pr), 100)
-                ax_reg.plot(x_range, m*x_range + b, color='red', linestyle='--', linewidth=1, label=f'Fit: y={m:.2f}x+{b:.2f}')
+                x_vals = np.array(xlims)
+                ax_reg.plot(x_vals, m*x_vals + b, color='red', linestyle='--', linewidth=1)
             
             # Ligne y=x
-            max_val = max(np.max(tr), np.max(pr))
-            ax_reg.plot([0, max_val], [0, max_val], color='gray', linestyle=':', linewidth=1, label='y=x')
+            ax_reg.plot(xlims, xlims, color='gray', linestyle=':', linewidth=1)
+            
+            # Zones colorées (diagonale des bonnes prédictions)
+            xmax, ymax = max(100, xlims[1]), max(100, ylims[1])
+            ax_reg.fill_between([0, 5], 0, 5, facecolor='lightblue', alpha=0.3, edgecolor='none')
+            ax_reg.fill_between([5, 15], 5, 15, facecolor='orange', alpha=0.3, edgecolor='none')
+            ax_reg.fill_between([15, xmax], 15, ymax, facecolor='lightcoral', alpha=0.3, edgecolor='none')
+            
+            # Quadrillage fin pour repérer les erreurs
+            ax_reg.axvline(5, color='gray', linestyle='--', alpha=0.3, linewidth=0.5)
+            ax_reg.axvline(15, color='gray', linestyle='--', alpha=0.3, linewidth=0.5)
+            ax_reg.axhline(5, color='gray', linestyle='--', alpha=0.3, linewidth=0.5)
+            ax_reg.axhline(15, color='gray', linestyle='--', alpha=0.3, linewidth=0.5)
+            
+            # Restaurer les limites pour couper les lignes aux bords
+            ax_reg.set_xlim(xlims)
+            ax_reg.set_ylim(ylims)
             
             ax_reg.set_xlabel('Predictions (%)', fontsize=8)
             ax_reg.set_ylabel('Ground truth (%)', fontsize=8)
@@ -376,14 +419,36 @@ def main():
             md = np.mean(diff_vals)
             sd = np.std(diff_vals, axis=0) if len(diff_vals) > 1 else 0
             
-            ax_ba.scatter(mean_vals, diff_vals, alpha=0.7, s=15, color='#2ca02c')
+            st_arr = np.array(pt_status[name])
+            
+            idx = st_arr == 'mute'
+            if np.any(idx):
+                ax_ba.scatter(mean_vals[idx], diff_vals[idx], alpha=0.8, s=25, c='#cc0000', marker='^')
+                
+            idx = st_arr == 'non_mute'
+            if np.any(idx):
+                ax_ba.scatter(mean_vals[idx], diff_vals[idx], alpha=0.8, s=20, c='#0000cc', marker='s')
+                
+            idx = st_arr == 'NR'
+            if np.any(idx):
+                ax_ba.scatter(mean_vals[idx], diff_vals[idx], alpha=0.8, s=20, c='#666666', marker='o')
+                
             ax_ba.axhline(md, color='red', linestyle='-', linewidth=1, label=f'Mean: {md:.2f}')
             if sd > 0:
                 ax_ba.axhline(md + 1.96*sd, color='gray', linestyle='--', linewidth=1, label=f'+1.96 SD: {md+1.96*sd:.2f}')
                 ax_ba.axhline(md - 1.96*sd, color='gray', linestyle='--', linewidth=1, label=f'-1.96 SD: {md-1.96*sd:.2f}')
             
+            # Echelle logarithmique sur l'axe X
+            ax_ba.set_xscale('symlog', linthresh=1.0)
+            
+            # Zones colorées sur la moyenne (Axe X)
+            ax_ba.axvspan(0, 5, facecolor='lightblue', alpha=0.3)
+            ax_ba.axvspan(5, 15, facecolor='orange', alpha=0.3)
+            ax_ba.axvspan(15, max(100, ax_ba.get_xlim()[1]), facecolor='lightcoral', alpha=0.3)
+            
             ax_ba.set_xlabel('Mean (Pred, GT) (%)', fontsize=8)
             ax_ba.set_ylabel('Diff (Pred - GT) (%)', fontsize=8)
+            ax_ba.set_ylim(-80, 80)
             
         ax_ba.text(-0.35, 1.05, panel_letters[2][col], transform=ax_ba.transAxes, 
                 fontsize=10, fontweight='bold', va='bottom')
@@ -392,6 +457,18 @@ def main():
         cbar = fig.colorbar(
             mappable_for_cbar, ax=axes_top, location='right', fraction=0.03, pad=0.02
         )
+
+    import matplotlib.lines as mlines
+    import matplotlib.patches as mpatches
+    legend_elements = [
+        mlines.Line2D([], [], color='w', marker='^', markerfacecolor='#cc0000', markersize=8, label='MUT'),
+        mlines.Line2D([], [], color='w', marker='s', markerfacecolor='#0000cc', markersize=7, label='WT'),
+        mlines.Line2D([], [], color='w', marker='o', markerfacecolor='#666666', markersize=7, label='ND'),
+        mpatches.Patch(facecolor='lightblue', alpha=0.5, edgecolor='gray', linewidth=0.5, label='<5%'),
+        mpatches.Patch(facecolor='orange', alpha=0.5, edgecolor='gray', linewidth=0.5, label='[5;14]'),
+        mpatches.Patch(facecolor='lightcoral', alpha=0.5, edgecolor='gray', linewidth=0.5, label='>15%')
+    ]
+    fig.legend(handles=legend_elements, loc='lower center', bbox_to_anchor=(0.5, 0.01), ncol=6, title='SF3B1 status & Categories', fontsize=8, title_fontsize=9, frameon=False)
 
     plt.savefig(OUTPUT_FIGURE_PATH, bbox_inches='tight', dpi=300)
     print(f"\nFigure successfully saved: {OUTPUT_FIGURE_PATH}")
