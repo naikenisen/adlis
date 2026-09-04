@@ -60,10 +60,11 @@ def load_classifier(model_path, device):
     return model
 
 def ratio_to_category(sc, sn):
-    if sn == 0:
-        ratio = 100.0 if sc > 0 else 0.0
+    total = sc + sn
+    if total == 0:
+        ratio = 0.0
     else:
-        ratio = (sc / sn) * 100.0
+        ratio = (sc / total) * 100.0
         
     if ratio < 5:
         return '<5%'
@@ -247,7 +248,7 @@ def main():
             patient_results[split][patient]['SN'] += sn_count
 
     print("Generating figure...")
-    display_categories = ['<5%', '[5;14]', '≥15%']
+    display_categories = ['<5%', '[5;14]%', '≥15%']
     internal_categories = ['<5%', 'entre 5 et 14 %', '>15%']
     splits = ['train', 'valid', 'test']
     display_names = {"train": "Train", "valid": "Valid", "test": "Test"}
@@ -260,9 +261,10 @@ def main():
     pt_status = {s: [] for s in splits}
     
     def calc_ratio(sc, sn):
-        if sn == 0:
-            return 100.0 if sc > 0 else 0.0
-        return (sc / sn) * 100.0
+        total = sc + sn
+        if total == 0:
+            return 0.0
+        return (sc / total) * 100.0
     
     for split in splits:
         if split in patient_results:
@@ -380,6 +382,12 @@ def main():
             xlims = ax_reg.get_xlim()
             ylims = ax_reg.get_ylim()
             
+            # Rendre les axes égaux (même minimum et maximum)
+            min_lim = min(xlims[0], ylims[0])
+            max_lim = max(xlims[1], ylims[1])
+            xlims = (min_lim, max_lim)
+            ylims = (min_lim, max_lim)
+            
             # Droite de régression
             if len(pr) > 1:
                 m, b = np.polyfit(pr, tr, 1)
@@ -460,15 +468,21 @@ def main():
 
     import matplotlib.lines as mlines
     import matplotlib.patches as mpatches
-    legend_elements = [
+    
+    leg1_elements = [
         mlines.Line2D([], [], color='w', marker='^', markerfacecolor='#cc0000', markersize=8, label='MUT'),
         mlines.Line2D([], [], color='w', marker='s', markerfacecolor='#0000cc', markersize=7, label='WT'),
-        mlines.Line2D([], [], color='w', marker='o', markerfacecolor='#666666', markersize=7, label='ND'),
+        mlines.Line2D([], [], color='w', marker='o', markerfacecolor='#666666', markersize=7, label='ND')
+    ]
+    leg1 = fig.legend(handles=leg1_elements, loc='lower right', bbox_to_anchor=(0.45, 0.01), ncol=3, title='SF3B1 status', fontsize=8, title_fontsize=9, frameon=False)
+    
+    leg2_elements = [
         mpatches.Patch(facecolor='lightblue', alpha=0.5, edgecolor='gray', linewidth=0.5, label='<5%'),
-        mpatches.Patch(facecolor='orange', alpha=0.5, edgecolor='gray', linewidth=0.5, label='[5;14]'),
+        mpatches.Patch(facecolor='orange', alpha=0.5, edgecolor='gray', linewidth=0.5, label='[5;14]%'),
         mpatches.Patch(facecolor='lightcoral', alpha=0.5, edgecolor='gray', linewidth=0.5, label='>15%')
     ]
-    fig.legend(handles=legend_elements, loc='lower center', bbox_to_anchor=(0.5, 0.01), ncol=6, title='SF3B1 status & Categories', fontsize=8, title_fontsize=9, frameon=False)
+    fig.legend(handles=leg2_elements, loc='lower left', bbox_to_anchor=(0.55, 0.01), ncol=3, title='Ring sideroblasts per 100 erythroblasts (%)', fontsize=8, title_fontsize=9, frameon=False)
+    fig.add_artist(leg1)
 
     plt.savefig(OUTPUT_FIGURE_PATH, bbox_inches='tight', dpi=300)
     print(f"\nFigure successfully saved: {OUTPUT_FIGURE_PATH}")
